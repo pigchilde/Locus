@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
-  <title>Locus macOS app icon</title>
-  <rect width="512" height="512" rx="112" fill="#007AFF"/>
-  <path d="M256 92C178.6 92 116 158 116 240.3c0 65 50.8 131.8 140 198.7 89.2-66.9 140-133.7 140-198.7C396 158 333.4 92 256 92Z" stroke="#FFFFFF" stroke-width="30" stroke-linejoin="round"/>
-  <path d="M174 279c0-68 37-123 82-123s82 55 82 123" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round"/>
-  <circle cx="256" cy="251" r="43.5" fill="#FFFFFF"/>
-</svg>

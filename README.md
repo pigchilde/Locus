@@ -19,8 +19,7 @@ Locus 是一款原生 macOS 工具：连接不同 Wi‑Fi 时，自动恢复对�
 swift test
 ```
 
-应用图标使用 Xcode Icon Composer 的新版 `.icon` 格式，源文件位于
-`designs/locus-macos-volume/Locus.icon`。生成应用包：
+应用图标资源位于 `Resources/Assets.xcassets`。生成应用包：
 
 ```bash
 ./Scripts/build_app.sh release

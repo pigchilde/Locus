@@ -20,9 +20,8 @@ xcrun actool \
   --compile "$APP/Contents/Resources" \
   --platform macosx \
   --minimum-deployment-target 14.0 \
-  --app-icon Locus \
+  --app-icon AppIcon \
   --output-partial-info-plist "$ROOT/dist/asset-info.plist" \
-  "$ROOT/designs/locus-macos-volume/Locus.icon" \
   "$ROOT/Resources/Assets.xcassets"
 
 codesign --force --sign - --timestamp=none "$APP"

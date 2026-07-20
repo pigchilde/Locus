@@ -1,7 +1,9 @@
 .build/
 .swiftpm/
 .vscode/
+.codex/
 DerivedData/
 dist/
+designs/
 *.xcuserstate
 .DS_Store
