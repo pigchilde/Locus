@@ -150,10 +150,13 @@ StateRepository 保存活动记录，按需发送系统通知
 
 ```text
 Locus/
+├── .github/                     CI、Issue 和 Pull Request 模板
+├── CONTRIBUTING.md             贡献指南
 ├── Package.swift                 SwiftPM 工程配置
 ├── PRODUCT.md                   产品定位与设计原则
 ├── Resources/                   Info.plist、应用图标和资源目录
 ├── Scripts/                     构建与图标生成脚本
+├── SECURITY.md                 安全问题报告策略
 ├── Sources/
 │   ├── LocusApp/                SwiftUI 应用、状态管理和系统服务
 │   │   ├── Services/            Wi-Fi、音频、权限、通知和登录启动
@@ -193,7 +196,7 @@ CoreWLAN、CoreAudio、系统权限和登录启动属于 macOS 系统集成，�
 
 ## 参与贡献
 
-欢迎通过 Issue 和 Pull Request 参与改进。提交代码前建议：
+欢迎通过 Issue 和 Pull Request 参与改进。完整流程参见 [CONTRIBUTING.md](CONTRIBUTING.md)。提交代码前建议：
 
 1. 先搜索已有 Issue，避免重复问题。
 2. 对较大的功能或行为变更，先创建 Issue 讨论方案。
@@ -213,8 +216,8 @@ test: cover disabled fallback rule
 
 ## 安全问题
 
-如果发现可能影响用户隐私或系统安全的问题，请不要在公开 Issue 中披露完整利用细节。建议通过 GitHub Security Advisory 的私密报告功能联系维护者。
+如果发现可能影响用户隐私或系统安全的问题，请不要在公开 Issue 中披露完整利用细节。请按照 [SECURITY.md](SECURITY.md) 通过 GitHub 的私密漏洞报告功能联系维护者。
 
 ## 许可证
 
-当前仓库尚未包含开源许可证。正式公开仓库前，请添加明确的 `LICENSE` 文件；在许可证确定之前，默认著作权规则仍然适用，其他人并不会自动获得复制、修改或分发代码的权利。
+Locus 使用宽松的 [0BSD License](LICENSE) 开源。你可以将代码用于个人或商业用途，也可以复制、修改和再分发，且不要求保留署名；软件按原样提供，不附带任何担保。

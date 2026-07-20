@@ -1,0 +1,73 @@
+name: Bug 报告
+description: 报告可以稳定复现的异常行为
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你帮助改进 Locus。提交前请删除或模糊处理敏感的 Wi-Fi 名称、设备名称和日志信息。
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前检查
+      options:
+        - label: 我已搜索现有 Issue，确认没有相同问题。
+          required: true
+        - label: 我使用的是当前最新版本或最新代码。
+          required: true
+
+  - type: input
+    id: macos_version
+    attributes:
+      label: macOS 版本
+      placeholder: 例如 macOS 14.6.1
+    validations:
+      required: true
+
+  - type: input
+    id: locus_version
+    attributes:
+      label: Locus 版本或提交
+      placeholder: 例如 1.0.0 或 Git commit SHA
+    validations:
+      required: true
+
+  - type: input
+    id: audio_device
+    attributes:
+      label: 音频设备
+      description: 请说明内置扬声器、蓝牙、HDMI、AirPlay 或其他设备类型，敏感名称可以省略。
+      placeholder: 例如 MacBook Pro 扬声器
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题描述
+      description: 请说明实际发生了什么，以及问题出现的频率。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 添加一条 Wi-Fi 规则
+        2. 切换到对应网络
+        3. 观察系统音量
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: 补充信息
+      description: 可以附上截图或经过脱敏的日志。请勿提交密码、精确位置等敏感信息。
