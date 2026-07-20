@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show toolchain versions
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Validate release version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PLIST_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+          if [[ "$TAG_VERSION" != "$PLIST_VERSION" ]]; then
+            echo "Tag version $TAG_VERSION does not match Info.plist version $PLIST_VERSION" >&2
+            exit 1
+          fi
+
+      - name: Run tests
+        run: swift test
+
+      - name: Build universal application
+        run: ./Scripts/build_app.sh release universal
+
+      - name: Package release
+        run: |
+          ASSET="Locus-${GITHUB_REF_NAME}-macOS-universal.zip"
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/Locus.app \
+            "dist/$ASSET"
+          (
+            cd dist
+            shasum -a 256 "$ASSET" > SHA256SUMS.txt
+          )
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          INSTALL_NOTES="$(cat <<'EOF'
+          > [!IMPORTANT]
+          > 此安装包使用 ad-hoc 签名，没有经过 Apple 公证。macOS 首次打开时需要手动允许。
+
+          请先阅读[安装与首次打开说明](https://github.com/pigchilde/Locus/blob/main/INSTALL.md)。安装包同时支持 Apple Silicon 和 Intel Mac。
+          EOF
+          )"
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/Locus-${GITHUB_REF_NAME}-macOS-universal.zip" \
+            dist/SHA256SUMS.txt \
+            --verify-tag \
+            --title "Locus $GITHUB_REF_NAME" \
+            --notes "$INSTALL_NOTES" \
+            --generate-notes

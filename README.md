@@ -8,9 +8,23 @@
   一款根据当前 Wi-Fi 自动恢复 Mac 输出设备、系统音量和静音状态的原生 macOS 工具。
 </p>
 
+<p align="center">
+  <a href="https://github.com/pigchilde/Locus/releases/latest">下载最新版本</a>
+  ·
+  <a href="INSTALL.md">安装与首次打开</a>
+  ·
+  <a href="https://github.com/pigchilde/Locus/actions/workflows/ci.yml">构建状态</a>
+</p>
+
 Locus 适合经常在家庭、办公室、咖啡店等网络环境之间切换的 Mac 用户。为不同 Wi-Fi 保存声音规则后，Locus 会在网络变化时自动应用对应配置，减少重复调整，也避免切换环境后突然外放或音量不合适。
 
 Locus 使用 Swift 和系统原生框架开发，不依赖第三方运行库，不包含服务端。Wi-Fi 规则、偏好设置和活动记录只保存在本机。
+
+## 下载与安装
+
+前往 [GitHub Releases](https://github.com/pigchilde/Locus/releases/latest) 下载 `Locus-版本号-macOS-universal.zip`。安装包同时支持 Apple Silicon 和 Intel Mac。
+
+当前公开安装包使用 ad-hoc 签名，没有经过 Apple 公证。macOS 第一次打开时可能需要在“系统设置 → 隐私与安全性”中点击“仍要打开”。完整步骤参见 [安装与首次打开 Locus](INSTALL.md)。
 
 ## 功能
 
@@ -60,6 +74,12 @@ swift test
 ./Scripts/build_app.sh release
 ```
 
+生成同时支持 Apple Silicon 和 Intel 的 Universal 应用：
+
+```bash
+./Scripts/build_app.sh release universal
+```
+
 构建结果位于：
 
 ```text
@@ -79,7 +99,7 @@ open dist/Locus.app
 3. 组装标准 macOS `.app` 目录。
 4. 使用 ad-hoc 签名对本地应用进行签名并验证。
 
-> 当前脚本生成的是当前 Mac 架构的本地开发包，使用 ad-hoc 签名，未进行 Developer ID 签名、公证或 Stapling。发布 GitHub Release 前，应使用正式开发者证书重新签名并完成 Apple 公证。
+> 当前脚本和 GitHub Release 使用 ad-hoc 签名，未进行 Developer ID 签名、公证或 Stapling。首次安装说明见 [INSTALL.md](INSTALL.md)。
 
 ## 首次运行与权限
 
@@ -152,8 +172,10 @@ StateRepository 保存活动记录，按需发送系统通知
 Locus/
 ├── .github/                     CI、Issue 和 Pull Request 模板
 ├── CONTRIBUTING.md             贡献指南
+├── INSTALL.md                  安装与首次打开说明
 ├── Package.swift                 SwiftPM 工程配置
 ├── PRODUCT.md                   产品定位与设计原则
+├── RELEASING.md                版本发布流程
 ├── Resources/                   Info.plist、应用图标和资源目录
 ├── Scripts/                     构建与图标生成脚本
 ├── SECURITY.md                 安全问题报告策略
@@ -192,7 +214,11 @@ CoreWLAN、CoreAudio、系统权限和登录启动属于 macOS 系统集成，�
 - 目标音频设备需要在规则生效时处于可用状态。
 - 部分 HDMI、AirPlay 或专业音频设备可能不支持软件音量或静音控制。
 - 菜单栏当前只提供显示主界面和退出功能。
-- GitHub Release 所需的正式签名、公证和自动发布流程尚未包含在仓库中。
+- GitHub Release 会自动生成未公证的 Universal ZIP，首次打开需要用户手动允许。
+
+## 发布版本
+
+维护者推送 `v*` 标签后，GitHub Actions 会自动运行测试、构建 Universal App、生成 SHA-256 校验文件并创建 Release。具体操作参见 [RELEASING.md](RELEASING.md)。
 
 ## 参与贡献
 

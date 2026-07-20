@@ -3,12 +3,23 @@ set -euo pipefail
 
 ROOT="${0:A:h:h}"
 CONFIGURATION="${1:-release}"
+ARCHITECTURE="${2:-native}"
 APP="$ROOT/dist/Locus.app"
 
 cd "$ROOT"
-swift build -c "$CONFIGURATION" --product Locus
-BIN_DIR="$(swift build -c "$CONFIGURATION" --show-bin-path)"
+BUILD_ARGS=(-c "$CONFIGURATION" --product Locus)
+if [[ "$ARCHITECTURE" == "universal" ]]; then
+  BUILD_ARGS+=(--arch arm64 --arch x86_64)
+elif [[ "$ARCHITECTURE" != "native" ]]; then
+  echo "Unsupported architecture mode: $ARCHITECTURE" >&2
+  echo "Use 'native' or 'universal'." >&2
+  exit 1
+fi
 
+swift build "${BUILD_ARGS[@]}"
+BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
+
+rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/Locus" "$APP/Contents/MacOS/Locus"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
@@ -24,7 +35,15 @@ xcrun actool \
   --output-partial-info-plist "$ROOT/dist/asset-info.plist" \
   "$ROOT/Resources/Assets.xcassets"
 
-codesign --force --sign - --timestamp=none "$APP"
+if [[ "$ARCHITECTURE" == "universal" ]]; then
+  ARCHS="$(lipo -archs "$APP/Contents/MacOS/Locus")"
+  [[ "$ARCHS" == *"arm64"* && "$ARCHS" == *"x86_64"* ]] || {
+    echo "Universal build is missing an architecture: $ARCHS" >&2
+    exit 1
+  }
+fi
+
+codesign --force --options runtime --sign - --timestamp=none "$APP"
 codesign --verify --deep --strict "$APP"
 
 echo "$APP"
