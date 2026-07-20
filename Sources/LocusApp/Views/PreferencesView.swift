@@ -52,18 +52,6 @@ struct PreferencesView: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                     }
-                    Divider()
-                    SettingRow(
-                        title: "在菜单栏显示",
-                        hint: "快速查看和临时调整音量"
-                    ) {
-                        Toggle("", isOn: Binding(
-                            get: { model.preferences.showMenuBar },
-                            set: model.setShowMenuBar
-                        ))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                    }
                 }
 
                 SettingsSection(title: "切换") {

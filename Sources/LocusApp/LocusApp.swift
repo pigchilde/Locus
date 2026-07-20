@@ -12,6 +12,11 @@ struct LocusApp: App {
                 .environmentObject(model)
                 .environmentObject(model.permissions)
                 .frame(minWidth: 780, minHeight: 620)
+                .background {
+                    MainWindowAccessor { window in
+                        appDelegate.registerMainWindow(window)
+                    }
+                }
                 .task {
                     applyDockIcon()
                     model.start()
@@ -31,26 +36,6 @@ struct LocusApp: App {
         .defaultSize(width: 1_020, height: 680)
         .defaultPosition(.center)
         .windowToolbarStyle(.unified)
-
-        MenuBarExtra(
-            isInserted: Binding(
-                get: { model.preferences.showMenuBar },
-                set: { model.setShowMenuBar($0) }
-            )
-        ) {
-            MenuBarContentView()
-                .environmentObject(model)
-        } label: {
-            ZStack {
-                LocusMark()
-                    .stroke(.primary, style: StrokeStyle(lineWidth: 1.35, lineCap: .round, lineJoin: .round))
-                Circle()
-                    .fill(.primary)
-                    .frame(width: 2.9, height: 2.9)
-            }
-                .frame(width: 17, height: 17)
-        }
-        .menuBarExtraStyle(.window)
     }
 
     private func applyDockIcon() {
@@ -60,5 +45,42 @@ struct LocusApp: App {
         else { return }
 
         NSApplication.shared.applicationIconImage = icon
+    }
+}
+
+private struct MainWindowAccessor: NSViewRepresentable {
+    let onWindowAvailable: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> WindowObservingView {
+        WindowObservingView(onWindowAvailable: onWindowAvailable)
+    }
+
+    func updateNSView(_ nsView: WindowObservingView, context: Context) {
+        nsView.onWindowAvailable = onWindowAvailable
+        nsView.reportWindowIfAvailable()
+    }
+}
+
+private final class WindowObservingView: NSView {
+    var onWindowAvailable: (NSWindow) -> Void
+
+    init(onWindowAvailable: @escaping (NSWindow) -> Void) {
+        self.onWindowAvailable = onWindowAvailable
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        reportWindowIfAvailable()
+    }
+
+    func reportWindowIfAvailable() {
+        guard let window else { return }
+        onWindowAvailable(window)
     }
 }
