@@ -25,8 +25,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func registerMainWindow(_ window: NSWindow) {
+        guard mainWindow !== window else { return }
+
+        if let mainWindow {
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSWindow.willCloseNotification,
+                object: mainWindow
+            )
+        }
+
         mainWindow = window
         window.isReleasedWhenClosed = false
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(mainWindowWillClose),
+            name: NSWindow.willCloseNotification,
+            object: window
+        )
     }
 
     private func installStatusItem() {
@@ -64,9 +80,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showMainWindow() {
+        NSApplication.shared.setActivationPolicy(.regular)
         let window = mainWindow ?? NSApplication.shared.windows.first(where: { $0.canBecomeMain })
         window?.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func mainWindowWillClose(_ notification: Notification) {
+        guard notification.object as? NSWindow === mainWindow else { return }
+        NSApplication.shared.setActivationPolicy(.accessory)
     }
 
     @objc private func quitApplication() {
