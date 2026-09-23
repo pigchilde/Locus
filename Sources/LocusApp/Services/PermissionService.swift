@@ -4,9 +4,12 @@ import Foundation
 final class PermissionService: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published private(set) var locationStatus: CLAuthorizationStatus
     @Published private(set) var isRequestingLocationPermission = false
+    @Published private(set) var didAuthorizationPromptTimeOut = false
 
     private let manager = CLLocationManager()
     var onAuthorizationChanged: (() -> Void)?
+    var onAuthorizationRequestStarted: (() -> Void)?
+    var onAuthorizationRequestFinished: (() -> Void)?
 
     override init() {
         locationStatus = manager.authorizationStatus
@@ -19,7 +22,9 @@ final class PermissionService: NSObject, ObservableObject, CLLocationManagerDele
     }
 
     var isDenied: Bool {
-        locationStatus == .denied || locationStatus == .restricted
+        locationStatus == .denied
+            || locationStatus == .restricted
+            || didAuthorizationPromptTimeOut
     }
 
     func requestLocationPermission() {
@@ -29,24 +34,39 @@ final class PermissionService: NSObject, ObservableObject, CLLocationManagerDele
         }
 
         isRequestingLocationPermission = true
-        manager.requestWhenInUseAuthorization()
+        didAuthorizationPromptTimeOut = false
+        onAuthorizationRequestStarted?()
 
-        // On macOS the authorization sheet is not always presented until the
-        // app actually starts a location request. We immediately stop again
-        // after the authorization callback and never retain any coordinates.
-        manager.startUpdatingLocation()
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self, self.locationStatus == .notDetermined else { return }
-            self.isRequestingLocationPermission = false
+            self.manager.requestWhenInUseAuthorization()
+
+            // On macOS the authorization sheet is not always presented until
+            // the app starts a location request. Coordinates are never retained.
+            self.manager.startUpdatingLocation()
         }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            guard let self, self.locationStatus == .notDetermined else { return }
+            self.cancelLocationPermissionRequest(offerSettings: true)
+        }
+    }
+
+    func cancelLocationPermissionRequest(offerSettings: Bool = false) {
+        guard isRequestingLocationPermission else { return }
+        isRequestingLocationPermission = false
+        didAuthorizationPromptTimeOut = offerSettings
+        manager.stopUpdatingLocation()
+        onAuthorizationRequestFinished?()
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         locationStatus = manager.authorizationStatus
         if locationStatus != .notDetermined {
             isRequestingLocationPermission = false
+            didAuthorizationPromptTimeOut = false
             manager.stopUpdatingLocation()
+            onAuthorizationRequestFinished?()
         }
         onAuthorizationChanged?()
     }
@@ -59,5 +79,6 @@ final class PermissionService: NSObject, ObservableObject, CLLocationManagerDele
         guard locationStatus != .notDetermined else { return }
         isRequestingLocationPermission = false
         manager.stopUpdatingLocation()
+        onAuthorizationRequestFinished?()
     }
 }

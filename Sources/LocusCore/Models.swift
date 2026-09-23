@@ -127,7 +127,6 @@ public struct WiFiRule: Codable, Hashable, Identifiable, Sendable {
 public struct AppPreferences: Codable, Equatable, Sendable {
     public var automationEnabled: Bool
     public var launchAtLogin: Bool
-    public var showMenuBar: Bool
     public var switchDelay: TimeInterval
     public var useFallbackRule: Bool
     public var appearance: AppearanceMode
@@ -135,14 +134,12 @@ public struct AppPreferences: Codable, Equatable, Sendable {
     public init(
         automationEnabled: Bool = true,
         launchAtLogin: Bool = false,
-        showMenuBar: Bool = true,
         switchDelay: TimeInterval = 1,
         useFallbackRule: Bool = true,
         appearance: AppearanceMode = .system
     ) {
         self.automationEnabled = automationEnabled
         self.launchAtLogin = launchAtLogin
-        self.showMenuBar = showMenuBar
         self.switchDelay = switchDelay
         self.useFallbackRule = useFallbackRule
         self.appearance = appearance
@@ -151,7 +148,6 @@ public struct AppPreferences: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case automationEnabled
         case launchAtLogin
-        case showMenuBar
         case switchDelay
         case useFallbackRule
         case appearance
@@ -161,7 +157,6 @@ public struct AppPreferences: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         automationEnabled = try container.decodeIfPresent(Bool.self, forKey: .automationEnabled) ?? true
         launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
-        showMenuBar = try container.decodeIfPresent(Bool.self, forKey: .showMenuBar) ?? true
         switchDelay = try container.decodeIfPresent(TimeInterval.self, forKey: .switchDelay) ?? 1
         useFallbackRule = try container.decodeIfPresent(Bool.self, forKey: .useFallbackRule) ?? true
         appearance = try container.decodeIfPresent(AppearanceMode.self, forKey: .appearance) ?? .system

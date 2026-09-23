@@ -26,7 +26,6 @@ final class StateRepositoryTests: XCTestCase {
             preferences: AppPreferences(
                 automationEnabled: true,
                 launchAtLogin: true,
-                showMenuBar: true,
                 switchDelay: 3,
                 useFallbackRule: false,
                 appearance: .dark
@@ -70,5 +69,26 @@ final class StateRepositoryTests: XCTestCase {
         let preferences = try JSONDecoder().decode(AppPreferences.self, from: data)
 
         XCTAssertEqual(preferences.appearance, .system)
+    }
+
+    func testLegacyShowMenuBarFieldIsIgnored() throws {
+        let data = Data("""
+        {
+          "automationEnabled": true,
+          "launchAtLogin": true,
+          "showMenuBar": false,
+          "switchDelay": 3,
+          "useFallbackRule": false,
+          "appearance": "dark"
+        }
+        """.utf8)
+
+        let preferences = try JSONDecoder().decode(AppPreferences.self, from: data)
+
+        XCTAssertTrue(preferences.automationEnabled)
+        XCTAssertTrue(preferences.launchAtLogin)
+        XCTAssertEqual(preferences.switchDelay, 3)
+        XCTAssertFalse(preferences.useFallbackRule)
+        XCTAssertEqual(preferences.appearance, .dark)
     }
 }

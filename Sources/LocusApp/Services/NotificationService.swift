@@ -2,8 +2,14 @@ import Foundation
 import UserNotifications
 
 final class NotificationService {
+    func authorizationStatus() async -> UNAuthorizationStatus {
+        guard Bundle.main.bundleURL.pathExtension == "app" else { return .notDetermined }
+        return await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    }
+
     func requestAuthorization() async -> Bool {
-        (try? await UNUserNotificationCenter.current().requestAuthorization(
+        guard Bundle.main.bundleURL.pathExtension == "app" else { return false }
+        return (try? await UNUserNotificationCenter.current().requestAuthorization(
             options: [.alert, .sound]
         )) ?? false
     }

@@ -3,6 +3,7 @@ import Combine
 import CoreLocation
 import Foundation
 import LocusCore
+import UserNotifications
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -33,11 +34,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var activities: [ActivityRecord]
     @Published private(set) var currentSSID: String?
     @Published private(set) var currentVolume: Double = 0
+    @Published private(set) var currentMuted = false
     @Published private(set) var currentDevice: AudioOutputDevice?
     @Published private(set) var availableDevices: [AudioOutputDevice] = []
     @Published private(set) var runtimeState: RuntimeState = .starting
-    @Published var selectedRuleID: UUID?
-    @Published var isShowingAddRule = false
+    @Published private(set) var notificationAuthorizationStatus: UNAuthorizationStatus = .notDetermined
     @Published var lastErrorMessage: String?
 
     let permissions: PermissionService
@@ -48,6 +49,7 @@ final class AppModel: ObservableObject {
     private let notifications: NotificationService
     private var networkTask: Task<Void, Never>?
     private var volumeTask: Task<Void, Never>?
+    private var interactiveVolumeTask: Task<Void, Never>?
     private var pausedUntil: Date?
     private var lastObservedSSID: String?
     private var hasStarted = false
@@ -75,7 +77,6 @@ final class AppModel: ObservableObject {
             activities = []
         }
 
-        selectedRuleID = rules.first(where: { !$0.isFallback })?.id ?? rules.first?.id
         self.permissions.onAuthorizationChanged = { [weak self] in
             Task { @MainActor in
                 self?.restartWiFiMonitoring()
@@ -89,6 +90,7 @@ final class AppModel: ObservableObject {
         applyAppearance()
         refreshAudioState()
         restartWiFiMonitoring()
+        Task { await refreshNotificationAuthorizationStatus() }
         preferences.launchAtLogin = LaunchAtLoginService.isEnabled
         persist()
     }
@@ -109,14 +111,19 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func refresh() {
+    /// Refreshes values shown in the menu bar without reapplying an unchanged rule.
+    func refreshSnapshot() {
         refreshAudioState()
-        handleSSIDChange(wifi.currentSSID, recordActivity: false)
+        let latestSSID = wifi.currentSSID
+        if latestSSID != currentSSID {
+            handleSSIDChange(latestSSID, recordActivity: false)
+        }
     }
 
     func refreshAudioState() {
         do {
             currentVolume = try audio.currentVolume()
+            currentMuted = try audio.isMuted()
             currentDevice = try audio.currentOutputDevice()
             availableDevices = try audio.outputDevices()
         } catch {
@@ -129,7 +136,13 @@ final class AppModel: ObservableObject {
     }
 
     func requestNotificationPermission() async -> Bool {
-        await notifications.requestAuthorization()
+        let granted = await notifications.requestAuthorization()
+        await refreshNotificationAuthorizationStatus()
+        return granted
+    }
+
+    func refreshNotificationAuthorizationStatus() async {
+        notificationAuthorizationStatus = await notifications.authorizationStatus()
     }
 
     func rule(withID id: UUID?) -> WiFiRule? {
@@ -144,10 +157,6 @@ final class AppModel: ObservableObject {
         copy.updatedAt = Date()
         rules[index] = copy
         persist()
-
-        if currentSSID == copy.ssid, copy.isEnabled, preferences.automationEnabled {
-            scheduleMatchingRuleApplication()
-        }
     }
 
     @discardableResult
@@ -163,7 +172,6 @@ final class AppModel: ObservableObject {
         }
 
         if let existing = rules.first(where: { !$0.isFallback && $0.ssid == ssid }) {
-            selectedRuleID = existing.id
             lastErrorMessage = "这个网络已经有一条规则。"
             return existing
         }
@@ -177,19 +185,13 @@ final class AppModel: ObservableObject {
         )
         let fallbackIndex = rules.firstIndex(where: { $0.isFallback }) ?? rules.endIndex
         rules.insert(rule, at: fallbackIndex)
-        selectedRuleID = rule.id
         persist()
         return rule
-    }
-
-    func addCurrentNetworkRule() {
-        isShowingAddRule = true
     }
 
     func deleteRule(id: UUID) {
         guard let rule = rules.first(where: { $0.id == id }), !rule.isFallback else { return }
         rules.removeAll(where: { $0.id == id })
-        selectedRuleID = rules.first?.id
         persist()
     }
 
@@ -201,14 +203,8 @@ final class AppModel: ObservableObject {
         } else {
             networkTask?.cancel()
             volumeTask?.cancel()
-            runtimeState = .ready
+            runtimeState = .paused(.distantFuture)
         }
-        persist()
-    }
-
-    func setShowMenuBar(_ enabled: Bool) {
-        guard preferences.showMenuBar != enabled else { return }
-        preferences.showMenuBar = enabled
         persist()
     }
 
@@ -246,12 +242,17 @@ final class AppModel: ObservableObject {
     }
 
     func setCurrentVolumeInteractively(_ value: Double) {
-        volumeTask?.cancel()
-        do {
-            try audio.setVolume(value)
-            currentVolume = min(max(value, 0), 1)
-        } catch {
-            report(error)
+        let normalized = min(max(value, 0), 1)
+        currentVolume = normalized
+        interactiveVolumeTask?.cancel()
+        interactiveVolumeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(40))
+            guard !Task.isCancelled, let self else { return }
+            do {
+                try audio.setVolume(normalized)
+            } catch {
+                report(error)
+            }
         }
     }
 
@@ -311,7 +312,7 @@ final class AppModel: ObservableObject {
         networkTask?.cancel()
 
         guard preferences.automationEnabled else {
-            runtimeState = .ready
+            runtimeState = .paused(.distantFuture)
             return
         }
         if let pausedUntil, pausedUntil > Date() {
@@ -374,6 +375,7 @@ final class AppModel: ObservableObject {
             }
 
             currentVolume = try audio.currentVolume()
+            currentMuted = try audio.isMuted()
             currentDevice = try audio.currentOutputDevice()
             runtimeState = .ready
             appendActivity(ActivityRecord(

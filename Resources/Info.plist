@@ -26,9 +26,13 @@
     <string>public.app-category.utilities</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Locus 需要读取当前 Wi‑Fi 名称，以便应用对应的音量规则。位置信息不会被记录或上传。</string>
+    <key>NSLocationUsageDescription</key>
     <string>Locus 需要读取当前 Wi‑Fi 名称，以便应用对应的音量规则。位置信息不会被记录或上传。</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
