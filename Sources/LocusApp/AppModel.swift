@@ -40,12 +40,16 @@ final class AppModel: ObservableObject {
     @Published private(set) var currentDevice: AudioOutputDevice?
     @Published private(set) var availableDevices: [AudioOutputDevice] = []
     @Published private(set) var runtimeState: RuntimeState = .starting
+    @Published private(set) var lastAppliedRule: WiFiRule?
     @Published private(set) var notificationAuthorizationStatus: UNAuthorizationStatus = .notDetermined
     @Published var lastErrorMessage: String?
 
     let permissions: PermissionService
 
     private let repository: StateRepository
+    private let preview: LocusPreviewState?
+    var isPreview: Bool { preview != nil }
+    var canReadWiFiName: Bool { preview.map { $0.scenario != "permission" } ?? permissions.canReadWiFiName }
     private let audio: CoreAudioService
     private let network: NetworkService
     private let notifications: NotificationService
@@ -61,9 +65,11 @@ final class AppModel: ObservableObject {
         audio: CoreAudioService = CoreAudioService(),
         network: NetworkService = NetworkService(),
         permissions: PermissionService = PermissionService(),
-        notifications: NotificationService = NotificationService()
+        notifications: NotificationService = NotificationService(),
+        preview: LocusPreviewState? = nil
     ) {
         self.repository = repository
+        self.preview = preview
         self.audio = audio
         self.network = network
         self.permissions = permissions
@@ -90,6 +96,18 @@ final class AppModel: ObservableObject {
         guard !hasStarted else { return }
         hasStarted = true
         applyAppearance()
+        if let preview {
+            currentNetwork = preview.network
+            currentVolume = 0
+            currentMuted = true
+            currentDevice = AudioOutputDevice(uid: "preview-speakers", name: "MacBook Pro 扬声器")
+            availableDevices = [currentDevice!, AudioOutputDevice(uid: "preview-headphones", name: "Studio Headphones")]
+            notificationAuthorizationStatus = .authorized
+            scheduleMatchingRuleApplication()
+            if runtimeState == .ready { lastAppliedRule = matchingRule }
+            if preview.scenario == "error" { runtimeState = .error("目标音频设备当前不可用。") }
+            return
+        }
         refreshAudioState()
         restartNetworkMonitoring()
         Task { await refreshNotificationAuthorizationStatus() }
@@ -98,6 +116,7 @@ final class AppModel: ObservableObject {
     }
 
     func restartNetworkMonitoring() {
+        guard !isPreview else { return }
         do {
             try network.startMonitoring { [weak self] connection in
                 // NetworkService delivers on the main queue, including its initial snapshot.
@@ -110,12 +129,13 @@ final class AppModel: ObservableObject {
 
     /// Refresh the panel without reapplying an unchanged network rule.
     func refreshSnapshot() {
+        guard !isPreview else { return }
         refreshAudioState()
         handleNetworkChange(network.currentConnection, recordActivity: false)
     }
 
     var needsWiFiPermission: Bool {
-        currentNetwork?.kind == .wifi && currentNetwork?.identifier == nil && !permissions.canReadWiFiName
+        currentNetwork?.kind == .wifi && currentNetwork?.identifier == nil && !canReadWiFiName
     }
 
     func isCurrentNetwork(_ rule: WiFiRule) -> Bool {
@@ -124,6 +144,7 @@ final class AppModel: ObservableObject {
     }
 
     func refreshAudioState() {
+        guard !isPreview else { return }
         do {
             currentVolume = try audio.currentVolume()
             currentMuted = try audio.isMuted()
@@ -135,16 +156,19 @@ final class AppModel: ObservableObject {
     }
 
     func requestLocationPermission() {
+        guard !isPreview else { return }
         permissions.requestLocationPermission()
     }
 
     func requestNotificationPermission() async -> Bool {
+        if isPreview { notificationAuthorizationStatus = .authorized; return true }
         let granted = await notifications.requestAuthorization()
         await refreshNotificationAuthorizationStatus()
         return granted
     }
 
     func refreshNotificationAuthorizationStatus() async {
+        guard !isPreview else { return }
         notificationAuthorizationStatus = await notifications.authorizationStatus()
     }
 
@@ -237,6 +261,7 @@ final class AppModel: ObservableObject {
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
+        if isPreview { preferences.launchAtLogin = enabled; persist(); return }
         guard preferences.launchAtLogin != enabled else { return }
         do {
             try LaunchAtLoginService.setEnabled(enabled)
@@ -251,6 +276,7 @@ final class AppModel: ObservableObject {
     func setCurrentVolumeInteractively(_ value: Double) {
         let normalized = min(max(value, 0), 1)
         currentVolume = normalized
+        guard !isPreview else { return }
         interactiveVolumeTask?.cancel()
         interactiveVolumeTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(40))
@@ -261,6 +287,14 @@ final class AppModel: ObservableObject {
                 report(error)
             }
         }
+    }
+
+    func setCurrentMutedInteractively(_ muted: Bool) {
+        if isPreview { currentMuted = muted; return }
+        do {
+            try audio.setMuted(muted)
+            refreshAudioState()
+        } catch { report(error) }
     }
 
     func applyRuleNow(_ rule: WiFiRule) {
@@ -311,6 +345,7 @@ final class AppModel: ObservableObject {
         }
         networkTask?.cancel()
         volumeTask?.cancel()
+        lastAppliedRule = nil
         if recordActivity {
             appendActivity(ActivityRecord(
                 kind: .networkChanged,
@@ -347,6 +382,8 @@ final class AppModel: ObservableObject {
             return
         }
 
+        if isPreview { runtimeState = .ready; return }
+
         let delay = preferences.switchDelay
         networkTask = Task { @MainActor [weak self] in
             if delay > 0 {
@@ -360,6 +397,19 @@ final class AppModel: ObservableObject {
     private func apply(_ rule: WiFiRule) async {
         guard rule.isEnabled else { return }
         runtimeState = .applying(rule.displayName)
+        if isPreview {
+            if let uid = rule.outputDeviceUID, !availableDevices.contains(where: { $0.uid == uid }) {
+                report(AudioServiceError.deviceNotFound)
+                return
+            }
+            currentVolume = rule.targetVolume
+            if rule.mutePolicy != .keep { currentMuted = rule.mutePolicy == .mute }
+            if let uid = rule.outputDeviceUID { currentDevice = availableDevices.first { $0.uid == uid } }
+            lastAppliedRule = rule
+            runtimeState = .ready
+            appendActivity(ActivityRecord(kind: .ruleApplied, title: "已应用 \(rule.displayName)", detail: "系统音量已调整至 \(Int((rule.targetVolume * 100).rounded()))%"))
+            return
+        }
 
         do {
             if let uid = rule.outputDeviceUID,
@@ -400,6 +450,7 @@ final class AppModel: ObservableObject {
             currentVolume = try audio.currentVolume()
             currentMuted = try audio.isMuted()
             currentDevice = try audio.currentOutputDevice()
+            lastAppliedRule = rule
             runtimeState = .ready
             appendActivity(ActivityRecord(
                 kind: .ruleApplied,
