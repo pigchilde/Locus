@@ -23,7 +23,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/Locus" "$APP/Contents/MacOS/Locus"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
-cp "$ROOT/Resources/LocusDockIcon.png" "$APP/Contents/Resources/LocusDockIcon.png"
+for IMAGE in LocusDockIcon LocusMark LocusMenuBarTemplate; do
+  cp "$ROOT/Resources/$IMAGE.png" "$APP/Contents/Resources/$IMAGE.png"
+done
 chmod 755 "$APP/Contents/MacOS/Locus"
 rm -f "$APP/Contents/Resources/AppIcon.icns"
 

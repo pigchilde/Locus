@@ -2,17 +2,17 @@
 set -euo pipefail
 
 ROOT="${0:A:h:h}"
-SOURCE="${1:-/private/tmp/locus-app-icon.svg.png}"
+SOURCE="${1:-$ROOT/Resources/LocusIconSource.png}"
 ICONSET="$ROOT/Resources/Assets.xcassets/AppIcon.appiconset"
 
 if [[ ! -f "$SOURCE" ]]; then
-  echo "Missing rendered 1024px source: $SOURCE" >&2
+  echo "Missing approved icon source: $SOURCE" >&2
   exit 1
 fi
 
-MASKED_SOURCE="/private/tmp/locus-app-icon-masked-$$.png"
-trap 'rm -f "$MASKED_SOURCE"' EXIT
-swift "$ROOT/Scripts/mask_icon.swift" "$SOURCE" "$MASKED_SOURCE"
+MASKED_SOURCE="$ROOT/Resources/LocusDockIcon.png"
+swift "$ROOT/Scripts/mask_icon.swift" "$SOURCE" "$MASKED_SOURCE" \
+  "$ROOT/Resources/LocusMark.png" "$ROOT/Resources/LocusMenuBarTemplate.png"
 
 mkdir -p "$ICONSET"
 

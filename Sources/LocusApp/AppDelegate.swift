@@ -333,65 +333,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func makeStatusBarIcon() -> NSImage {
-        let size = NSSize(width: 18, height: 18)
-        let image = NSImage(size: size, flipped: false) { rect in
-            let sx = rect.width / 64
-            let sy = rect.height / 64
-            func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
-                NSPoint(x: rect.minX + x * sx, y: rect.maxY - y * sy)
-            }
-
-            let mark = NSBezierPath()
-            mark.move(to: point(32, 11.5))
-            mark.curve(
-                to: point(14.5, 30.04),
-                controlPoint1: point(22.33, 11.5),
-                controlPoint2: point(14.5, 19.75)
-            )
-            mark.curve(
-                to: point(32, 54.88),
-                controlPoint1: point(14.5, 38.16),
-                controlPoint2: point(20.85, 46.51)
-            )
-            mark.curve(
-                to: point(49.5, 30.04),
-                controlPoint1: point(43.15, 46.51),
-                controlPoint2: point(49.5, 38.16)
-            )
-            mark.curve(
-                to: point(32, 11.5),
-                controlPoint1: point(49.5, 19.75),
-                controlPoint2: point(41.68, 11.5)
-            )
-            mark.close()
-            mark.move(to: point(21.75, 34.88))
-            mark.curve(
-                to: point(32, 19.5),
-                controlPoint1: point(21.75, 26.38),
-                controlPoint2: point(26.38, 19.5)
-            )
-            mark.curve(
-                to: point(42.25, 34.88),
-                controlPoint1: point(37.63, 19.5),
-                controlPoint2: point(42.25, 26.38)
-            )
-            mark.lineWidth = 4.8 * min(sx, sy)
-            mark.lineCapStyle = .round
-            mark.lineJoinStyle = .round
-            NSColor.black.setStroke()
-            mark.stroke()
-
-            let dotSize: CGFloat = 10
-            let dot = NSRect(
-                x: rect.midX - dotSize * sx / 2,
-                y: rect.midY - dotSize * sy / 2,
-                width: dotSize * sx,
-                height: dotSize * sy
-            )
-            NSColor.black.setFill()
-            NSBezierPath(ovalIn: dot).fill()
-            return true
-        }
+        let image = LocusBrand.menuBarIcon.copy() as! NSImage
+        image.size = NSSize(width: 18, height: 18)
         image.isTemplate = true
         return image
     }
