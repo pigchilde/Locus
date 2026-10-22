@@ -28,6 +28,7 @@ struct LocusMark: View {
     var body: some View {
         Image(nsImage: LocusBrand.mark)
             .resizable()
+            .interpolation(.high)
             .scaledToFit()
             .accessibilityLabel("Locus")
     }

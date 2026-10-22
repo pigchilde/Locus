@@ -4,33 +4,38 @@ import SwiftUI
 struct MenuBarRuleDetailView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var router: PanelRouter
-
     let ruleID: UUID
     @State private var isConfirmingDelete: Bool
     @State private var draftVolume: Double?
+    @State private var draftName = ""
 
     init(ruleID: UUID, initiallyConfirmingDelete: Bool = false) {
         self.ruleID = ruleID
         _isConfirmingDelete = State(initialValue: initiallyConfirmingDelete)
-        _draftVolume = State(initialValue: nil)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            MenuBarHeader(title: rule?.displayName ?? "规则", onBack: router.showHome)
-
+            MenuBarHeader(title: "规则详情", onBack: router.showHome)
             if let rule {
                 ScrollView {
                     VStack(alignment: .leading, spacing: LocusDesign.sectionSpacing) {
                         statusSection(rule)
                         soundSection(rule)
                         behaviorSection(rule)
-                        actionSection(rule)
+                        if let message = model.lastErrorMessage {
+                            Label(message, systemImage: "exclamationmark.circle")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.red)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 4)
+                        }
                     }
                     .padding(.horizontal, LocusDesign.pagePadding)
-                    .padding(.vertical, 6)
+                    .padding(.bottom, 12)
                 }
-                .scrollIndicators(.hidden)
+                .scrollIndicators(.automatic)
+                actionFooter(rule)
             } else {
                 ContentUnavailableView {
                     Label("规则不存在", systemImage: "wifi.exclamationmark")
@@ -38,169 +43,140 @@ struct MenuBarRuleDetailView: View {
                     Text("这条规则可能已经被删除。")
                 } actions: {
                     Button("返回首页", action: router.showHome)
-                        .buttonStyle(LocusPrimaryButtonStyle())
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .onAppear {
             draftVolume = rule?.targetVolume
+            draftName = rule?.displayName ?? ""
             model.lastErrorMessage = nil
         }
+        .onChange(of: draftName) { _, value in
+            let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, var updated = rule, updated.displayName != name else { return }
+            updated.displayName = name
+            model.updateRule(updated)
+        }
         .onExitCommand {
-            if isConfirmingDelete {
-                isConfirmingDelete = false
-            } else {
-                router.showHome()
-            }
+            if isConfirmingDelete { isConfirmingDelete = false }
+            else { router.showHome() }
         }
     }
 
-    private var rule: WiFiRule? {
-        model.rule(withID: ruleID)
-    }
+    private var rule: WiFiRule? { model.rule(withID: ruleID) }
 
     private func statusSection(_ rule: WiFiRule) -> some View {
-        MenuBarSection(title: "规则") {
-            LocusCard { MenuBarRow(
-                title: rule.isFallback ? "其他网络" : rule.displayName,
-                subtitle: rule.isFallback ? "未保存网络的默认规则" : currentRuleDescription(rule),
-                icon: rule.isFallback ? "globe" : rule.kind.symbol
-            ) {
-                Toggle("启用规则", isOn: binding(rule, \.isEnabled))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-            } }
+        MenuBarSection(title: "网络") {
+            LocusCard {
+                VStack(spacing: 0) {
+                    MenuBarRow(
+                        title: rule.displayName,
+                        subtitle: rule.isFallback ? "未保存网络的默认规则" : model.isCurrentNetwork(rule) ? "当前已连接" : "连接此\(rule.kind.displayName)时自动应用",
+                        icon: rule.isFallback ? "globe" : rule.kind == .ethernet ? "cable.connector" : "wifi",
+                        iconColor: model.isCurrentNetwork(rule) ? .accentColor : .secondary
+                    ) {
+                        Toggle("启用规则", isOn: binding(rule, \.isEnabled))
+                            .labelsHidden().toggleStyle(LocusSwitchStyle())
+                    }
+                    if !rule.isFallback {
+                        Divider()
+                        HStack(spacing: 12) {
+                            Text("名称").font(.system(size: 12))
+                            TextField(rule.kind == .ethernet ? "例如 办公室有线网络" : "例如 家庭 Wi-Fi", text: $draftName)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 11))
+                                .accessibilityLabel("规则名称")
+                        }
+                        .frame(minHeight: 39)
+                        if rule.kind == .wifi {
+                            Text("匹配 Wi-Fi：\(rule.ssid)")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.bottom, 10)
+                        }
+                    }
+                }
+            }
         }
     }
 
     private func soundSection(_ rule: WiFiRule) -> some View {
         MenuBarSection(title: "声音") {
-            LocusCard { VStack(spacing: 0) {
-                MenuBarRow(title: "输出设备", subtitle: selectedDeviceDescription(rule), icon: "speaker.wave.2.fill") {
-                    Picker("输出设备", selection: outputDeviceBinding(rule)) {
-                        Text("保持当前设备").tag(String?.none)
-                        if let uid = unavailableSelectedDeviceUID(rule) {
-                            Text("\(rule.outputDeviceName ?? "已保存设备")（当前不可用）")
-                                .tag(Optional(uid))
-                        }
-                        ForEach(model.availableDevices) { device in
-                            Text(device.name).tag(Optional(device.uid))
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .tint(.primary)
-                    .frame(maxWidth: 155)
-                }
-
-                Divider()
-
-                HStack(alignment: .top, spacing: 10) {
-                    LocusIconTile(symbol: "chart.bar.fill")
-                    VStack(alignment: .leading, spacing: 7) {
-                    HStack {
-                        Text("目标音量")
-                            .font(.system(size: 12.5, weight: .medium))
-                        Spacer()
-                        Text(draftVolume ?? rule.targetVolume, format: .percent.precision(.fractionLength(0)))
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
-                    HStack(spacing: 9) {
-                        Image(systemName: "speaker.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                        Slider(
-                            value: Binding(
-                                get: { draftVolume ?? rule.targetVolume },
-                                set: { draftVolume = $0 }
-                            ),
-                            in: 0...1,
-                            onEditingChanged: { isEditing in
-                                guard !isEditing, let draftVolume,
-                                      var updated = model.rule(withID: rule.id) else { return }
-                                updated.targetVolume = draftVolume
-                                model.updateRule(updated)
+            LocusCard {
+                VStack(spacing: 0) {
+                    MenuBarRow(title: "输出设备", icon: "speaker.wave.2") {
+                        Picker("输出设备", selection: outputDeviceBinding(rule)) {
+                            Text("保持当前设备").tag(String?.none)
+                            if let uid = unavailableSelectedDeviceUID(rule) {
+                                Text("\(rule.outputDeviceName ?? "已保存设备")（不可用）").tag(Optional(uid))
                             }
-                        )
-                        .accessibilityLabel("目标音量")
-                        .accessibilityValue(Text(draftVolume ?? rule.targetVolume, format: .percent))
-                    }
-                }
-                }
-                .padding(.vertical, 8)
-
-                Divider()
-
-                MenuBarRow(title: "静音状态", icon: "speaker.slash.fill") {
-                    Picker("静音状态", selection: binding(rule, \.mutePolicy)) {
-                        ForEach(MutePolicy.allCases) { policy in
-                            Text(policy.displayName).tag(policy)
+                            ForEach(model.availableDevices) { device in
+                                Text(device.name).tag(Optional(device.uid))
+                            }
                         }
+                        .modifier(LocusMenuPickerStyle())
+                        .help(rule.outputDeviceName ?? "保持当前设备")
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .tint(.primary)
-                    .frame(maxWidth: 155)
+                    if unavailableSelectedDeviceUID(rule) != nil {
+                        Label("所选设备当前不可用，连接后才可应用。", systemImage: "exclamationmark.circle")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.orange)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.bottom, 8)
+                    }
+                    Divider()
+                    LocusVolumeEditor(value: Binding(
+                        get: { draftVolume ?? rule.targetVolume },
+                        set: { draftVolume = $0 }
+                    ), onEditingChanged: { editing in
+                        guard !editing, let draftVolume, var updated = model.rule(withID: rule.id) else { return }
+                        updated.targetVolume = draftVolume
+                        model.updateRule(updated)
+                    })
+                    Divider()
+                    MenuBarRow(title: "静音状态", icon: "speaker.slash") {
+                        Picker("静音状态", selection: binding(rule, \.mutePolicy)) {
+                            ForEach(MutePolicy.allCases) { Text($0.displayName).tag($0) }
+                        }
+                        .modifier(LocusMenuPickerStyle())
+                    }
                 }
-            } }
+            }
         }
     }
 
     private func behaviorSection(_ rule: WiFiRule) -> some View {
         MenuBarSection(title: "行为") {
-            LocusCard { VStack(spacing: 0) {
-                MenuBarRow(title: "调整方式", icon: "slider.horizontal.3") {
-                    Picker("调整方式", selection: binding(rule, \.transition)) {
-                        ForEach(VolumeTransition.allCases) { transition in
-                            Text(transition.displayName).tag(transition)
+            LocusCard {
+                VStack(spacing: 0) {
+                    MenuBarRow(title: "调整方式", icon: "slider.horizontal.3") {
+                        Picker("调整方式", selection: binding(rule, \.transition)) {
+                            ForEach(VolumeTransition.allCases) { Text($0.displayName).tag($0) }
                         }
+                        .modifier(LocusMenuPickerStyle())
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .tint(.primary)
-                    .frame(maxWidth: 155)
+                    Divider()
+                    MenuBarRow(title: "规则通知", icon: "bell") {
+                        Toggle("规则通知", isOn: binding(rule, \.showsNotification))
+                            .labelsHidden().toggleStyle(LocusSwitchStyle())
+                    }
                 }
-                Divider()
-                MenuBarRow(title: "规则通知", subtitle: "规则应用成功后通知", icon: "bell") {
-                    Toggle("规则通知", isOn: binding(rule, \.showsNotification))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                }
-            } }
+            }
         }
     }
 
-    @ViewBuilder
-    private func actionSection(_ rule: WiFiRule) -> some View {
-        MenuBarSection(title: "操作") {
-            if let message = model.lastErrorMessage {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                    Text(message)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
+    private func actionFooter(_ rule: WiFiRule) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Divider()
+            if isConfirmingDelete && !rule.isFallback {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("删除“\(rule.displayName)”？")
+                        .font(.system(size: 12, weight: .semibold))
                         .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                }
-                .padding(10)
-                .background(Color.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
-            }
-
-            if !rule.isFallback, isConfirmingDelete {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                        Text("删除“\(rule.displayName)”？")
-                            .font(.system(size: 12.5, weight: .semibold))
-                    }
-                    Text("以后连接此网络时将不再自动调整声音。")
-                        .font(.system(size: 10.5))
+                    Text("以后连接此网络时，不再自动应用这条规则。")
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                     HStack {
                         Spacer()
@@ -213,41 +189,34 @@ struct MenuBarRuleDetailView: View {
                         .buttonStyle(LocusDangerButtonStyle())
                     }
                 }
-                .padding(11)
-                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 9))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 9)
-                        .stroke(Color.red.opacity(0.16), lineWidth: 0.5)
-                )
-            }
-
-            HStack(spacing: 8) {
-                if !rule.isFallback, !isConfirmingDelete {
-                    Button(role: .destructive) {
-                        isConfirmingDelete = true
-                    } label: {
-                        Label("删除规则", systemImage: "trash")
+                .padding(14)
+            } else {
+                HStack {
+                    if !rule.isFallback {
+                        Button(role: .destructive) { isConfirmingDelete = true } label: {
+                            Label("删除规则", systemImage: "trash")
+                        }
+                        .buttonStyle(LocusDangerButtonStyle())
+                    } else {
+                        Text("设置自动保存").font(.system(size: 10)).foregroundStyle(.secondary)
                     }
-                    .buttonStyle(LocusDangerButtonStyle())
+                    Spacer()
+                    Button {
+                        model.lastErrorMessage = nil
+                        model.applyRuleNow(model.rule(withID: rule.id) ?? rule)
+                    } label: {
+                        Label(isApplying(rule) ? "正在应用" : "立即应用", systemImage: isApplying(rule) ? "arrow.triangle.2.circlepath" : "play.fill")
+                    }
+                    .buttonStyle(LocusPrimaryButtonStyle())
+                    .disabled(!rule.isEnabled || isApplying(rule))
                 }
-
-                Spacer()
-
-                if isConfirmingDelete {
-                    applyButton(rule)
-                        .buttonStyle(LocusSecondaryButtonStyle())
-                } else {
-                    applyButton(rule)
-                        .buttonStyle(LocusPrimaryButtonStyle())
-                }
+                .padding(.horizontal, LocusDesign.pagePadding)
+                .frame(height: LocusDesign.bottomBarHeight)
             }
         }
     }
 
-    private func binding<Value>(
-        _ rule: WiFiRule,
-        _ keyPath: WritableKeyPath<WiFiRule, Value>
-    ) -> Binding<Value> {
+    private func binding<Value>(_ rule: WiFiRule, _ keyPath: WritableKeyPath<WiFiRule, Value>) -> Binding<Value> {
         Binding(
             get: { model.rule(withID: rule.id)?[keyPath: keyPath] ?? rule[keyPath: keyPath] },
             set: { value in
@@ -259,20 +228,17 @@ struct MenuBarRuleDetailView: View {
     }
 
     private func outputDeviceBinding(_ rule: WiFiRule) -> Binding<String?> {
-        Binding(
-            get: { model.rule(withID: rule.id)?.outputDeviceUID },
-            set: { uid in
-                guard var updated = model.rule(withID: rule.id) else { return }
-                if let uid, let device = model.availableDevices.first(where: { $0.uid == uid }) {
-                    updated.outputDeviceUID = device.uid
-                    updated.outputDeviceName = device.name
-                } else if uid == nil {
-                    updated.outputDeviceUID = nil
-                    updated.outputDeviceName = nil
-                }
-                model.updateRule(updated)
+        Binding(get: { model.rule(withID: rule.id)?.outputDeviceUID }, set: { uid in
+            guard var updated = model.rule(withID: rule.id) else { return }
+            if let uid, let device = model.availableDevices.first(where: { $0.uid == uid }) {
+                updated.outputDeviceUID = device.uid
+                updated.outputDeviceName = device.name
+            } else if uid == nil {
+                updated.outputDeviceUID = nil
+                updated.outputDeviceName = nil
             }
-        )
+            model.updateRule(updated)
+        })
     }
 
     private func unavailableSelectedDeviceUID(_ rule: WiFiRule) -> String? {
@@ -280,40 +246,8 @@ struct MenuBarRuleDetailView: View {
         return model.availableDevices.contains(where: { $0.uid == uid }) ? nil : uid
     }
 
-    private func selectedDeviceDescription(_ rule: WiFiRule) -> String {
-        guard let uid = rule.outputDeviceUID else { return "保持当前设备" }
-        if model.availableDevices.contains(where: { $0.uid == uid }) {
-            return rule.outputDeviceName ?? "已选择设备"
-        }
-        return "\(rule.outputDeviceName ?? "已保存设备")（当前不可用）"
-    }
-
-    private func currentRuleDescription(_ rule: WiFiRule) -> String {
-        if model.isCurrentNetwork(rule) {
-            return model.matchingRule?.id == rule.id ? "当前已连接并匹配" : "当前已连接"
-        }
-        return "连接此\(rule.kind.displayName)时自动应用"
-    }
-
     private func isApplying(_ rule: WiFiRule) -> Bool {
         guard case .applying(let name) = model.runtimeState else { return false }
         return name == rule.displayName
-    }
-
-    private func applyButton(_ rule: WiFiRule) -> some View {
-        Button {
-            model.lastErrorMessage = nil
-            model.applyRuleNow(rule)
-        } label: {
-            if isApplying(rule) {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text("正在应用")
-                }
-            } else {
-                Label("立即应用", systemImage: "play.fill")
-            }
-        }
-        .disabled(!rule.isEnabled || isApplying(rule))
     }
 }

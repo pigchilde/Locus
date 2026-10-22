@@ -1,132 +1,240 @@
-import AppKit
 import LocusCore
 import SwiftUI
 
 struct MenuBarHomeView: View {
     @EnvironmentObject private var model: AppModel
-    @EnvironmentObject private var permissions: PermissionService
     @EnvironmentObject private var router: PanelRouter
 
     var body: some View {
         VStack(spacing: 0) {
-            MenuBarHeader(title: "Locus") {
-                Button {
-                    router.route = .settings
-                } label: {
-                    Image(systemName: "gearshape")
-                        .frame(width: 20, height: 20)
-                }
-                .buttonStyle(.plain)
-                .help("打开设置")
-                .accessibilityLabel("打开设置")
-            }
-
+            header
             ScrollView {
-                VStack(alignment: .leading, spacing: LocusDesign.sectionSpacing) {
-                    runtimeStatus
-                    if model.needsWiFiPermission {
-                        permissionNotice
-                    }
+                VStack(alignment: .leading, spacing: 14) {
                     environmentSection
                     audioSection
                     rulesSection
-                    activitySection
                 }
                 .padding(.horizontal, LocusDesign.pagePadding)
-                .padding(.vertical, 6)
+                .padding(.bottom, 2)
             }
-            .scrollIndicators(.hidden)
-
-            automationFooter.padding(.horizontal, LocusDesign.pagePadding).padding(.bottom, 10)
+            .scrollIndicators(.automatic)
+            footer.padding(.top, 12)
         }
     }
 
-    private var runtimeStatus: some View {
-        HStack(spacing: 7) {
-            Image(systemName: runtimeSymbol)
-                .foregroundStyle(runtimeColor)
-            Text(runtimeText)
-                .font(.system(size: 11.5, weight: .medium))
+    private var header: some View {
+        HStack {
+            LocusMark().frame(width: LocusDesign.brandMarkSize, height: LocusDesign.brandMarkSize)
             Spacer()
-        }
-        .padding(.horizontal, 12)
-        .frame(height: 40)
-        .background(Color.orange.opacity(0.075), in: RoundedRectangle(cornerRadius: LocusDesign.cardRadius))
-        .accessibilityElement(children: .combine)
-    }
-
-    private var permissionNotice: some View {
-        HStack(alignment: .center, spacing: 10) {
-            LocusIconTile(symbol: "location.fill", color: .orange)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("无法读取当前 Wi‑Fi")
-                    .font(.system(size: 12, weight: .semibold))
-                Text("macOS 需要位置权限才能提供网络名称。")
-                    .font(.system(size: 10.5))
+            HStack(spacing: 8) {
+                Text(model.preferences.automationEnabled ? "自动控制" : "已暂停")
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
+                Toggle("自动控制", isOn: Binding(
+                    get: { model.preferences.automationEnabled },
+                    set: model.setAutomationEnabled
+                ))
+                .labelsHidden()
+                .toggleStyle(LocusSwitchStyle())
             }
-            Spacer(minLength: 8)
-            Button(permissionButtonTitle) {
-                if permissions.isDenied {
-                    openLocationSettings()
-                } else {
-                    router.route = .permission
-                }
-            }
-            .buttonStyle(LocusSecondaryButtonStyle())
-            .disabled(permissions.isRequestingLocationPermission)
         }
-        .padding(11)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: LocusDesign.cardRadius))
-    }
-
-    private var permissionButtonTitle: String {
-        if permissions.isRequestingLocationPermission {
-            return "等待系统…"
-        }
-        return permissions.isDenied ? "打开设置" : "允许"
+        .padding(.horizontal, 18)
+        .frame(height: LocusDesign.headerHeight)
     }
 
     private var environmentSection: some View {
-        MenuBarSection(title: "当前环境") {
-            LocusCard {
-                if let destination = environmentDestination {
-                    Button {
-                        router.route = destination
-                    } label: {
-                        environmentRow
+        LocusCard {
+            HStack(spacing: 11) {
+                Image(systemName: model.currentNetwork?.kind == .ethernet ? "cable.connector" : model.currentNetwork == nil ? "network.slash" : "wifi")
+                    .font(.system(size: 19, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 38, height: 38)
+                    .background(model.currentNetwork == nil ? Color.gray : Color.accentColor, in: Circle())
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(environmentName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                        .help(environmentName)
+                    HStack(spacing: 4) {
+                        Image(systemName: runtimeSymbol).foregroundStyle(runtimeColor)
+                        Text(runtimeText).foregroundStyle(.secondary)
                     }
-                    .buttonStyle(LocusRowButtonStyle())
+                    .font(.system(size: 10))
+                    .lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let destination = environmentDestination {
+                    Button { router.route = destination } label: {
+                        if destination == .addRule || destination == .permission {
+                            Text(destination == .addRule ? "添加规则" : "授权")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Color.accentColor)
+                        } else {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 13))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, 10)
+                    .accessibilityLabel(environmentActionTitle)
                     .help(environmentActionTitle)
-                    .accessibilityLabel("\(environmentName)，\(environmentActionTitle)")
-                    .accessibilityHint("打开当前网络的规则设置")
-                } else {
-                    environmentRow
                 }
             }
+            .frame(minHeight: 73)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("当前网络")
+    }
+
+    private var audioSection: some View {
+        LocusCard {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack {
+                    Text("声音").font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Text(model.currentMuted ? "已静音" : "\(Int((model.currentVolume * 100).rounded()))%")
+                        .font(.system(size: 11))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                Label(model.currentDevice?.name ?? "未找到输出设备", systemImage: "speaker.wave.2")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .help(model.currentDevice?.name ?? "未找到输出设备")
+                HStack(spacing: 9) {
+                    Button {
+                        model.setCurrentMutedInteractively(!model.currentMuted)
+                    } label: {
+                        Image(systemName: model.currentMuted ? "speaker.slash" : "speaker.fill")
+                            .frame(width: 16, height: 18)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(model.currentMuted ? "取消静音" : "静音")
+                    .help(model.currentMuted ? "取消静音" : "静音")
+                    Slider(value: Binding(get: { model.currentVolume }, set: model.setCurrentVolumeInteractively), in: 0...1)
+                        .controlSize(.small)
+                        .accessibilityLabel("当前音量")
+                    Image(systemName: "speaker.wave.2.fill").accessibilityHidden(true)
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .disabled(model.currentDevice == nil)
+                Text("连接此网络时自动恢复声音设置")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 25)
+            }
+            .padding(.vertical, 12)
         }
     }
 
-    private var environmentRow: some View {
-        MenuBarRow(title: environmentName, subtitle: environmentSubtitle,
-                   icon: model.currentNetwork?.kind.symbol ?? "network.slash") {
-            if environmentDestination != nil {
-                HStack(spacing: 5) {
-                    Text(environmentActionTitle)
-                        .font(.system(size: 10.5, weight: .medium))
+    private var rulesSection: some View {
+        VStack(spacing: 7) {
+            HStack {
+                Text("网络规则").foregroundStyle(.secondary)
+                Spacer()
+                Button { router.route = .addRule } label: {
+                    Label("添加", systemImage: "plus")
                         .foregroundStyle(Color.accentColor)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("添加网络规则")
+            }
+            .font(.system(size: 11, weight: .medium))
+            .padding(.horizontal, 4)
+            .padding(.top, 3)
+            LocusCard {
+                VStack(spacing: 0) {
+                    ForEach(Array(orderedRules.enumerated()), id: \.element.id) { index, rule in
+                        if index > 0 { Divider().padding(.leading, 26) }
+                        Button { router.route = .rule(rule.id) } label: { ruleRow(rule) }
+                            .buttonStyle(LocusRowButtonStyle())
+                    }
+                    if orderedRules.isEmpty {
+                        Button { router.route = .addRule } label: {
+                            Label("为当前网络添加规则", systemImage: "plus")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.accentColor)
+                                .frame(maxWidth: .infinity, minHeight: 43, alignment: .leading)
+                        }
+                        .buttonStyle(LocusRowButtonStyle())
+                    }
                 }
             }
         }
     }
 
-    private var currentEnvironmentRule: WiFiRule? {
-        // Include disabled exact rules so this opens their settings instead of
-        // attempting to add a duplicate or editing the shared fallback rule.
-        model.rules.first { model.isCurrentNetwork($0) }
+    private func ruleRow(_ rule: WiFiRule) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: rule.isFallback ? "globe" : rule.kind == .ethernet ? "cable.connector" : "wifi")
+                .font(.system(size: 13))
+                .foregroundStyle(model.isCurrentNetwork(rule) ? Color.accentColor : .secondary)
+                .frame(width: 17)
+            Text(rule.displayName)
+                .font(.system(size: 12, weight: model.isCurrentNetwork(rule) ? .medium : .regular))
+                .foregroundStyle(rule.isEnabled ? .primary : .secondary)
+                .lineLimit(1)
+                .help(rule.displayName)
+                .layoutPriority(1)
+            if model.isCurrentNetwork(rule) {
+                Text("当前")
+                    .fixedSize()
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
+            }
+            Spacer(minLength: 4)
+            Text(ruleSummary(rule))
+                .font(.system(size: 11))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .fixedSize()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 8, weight: .medium))
+                .foregroundStyle(.tertiary)
+        }
+        .frame(minHeight: 42.5)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("打开规则详情")
+    }
+
+    private var footer: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack {
+                Button { router.route = .activity } label: {
+                    Label(activitySummary, systemImage: "clock.arrow.circlepath")
+                        .font(.system(size: 10))
+                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("查看最近活动，\(activitySummary)")
+                Spacer(minLength: 8)
+                Button { router.route = .settings } label: {
+                    Image(systemName: "gearshape").font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 28)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("打开设置")
+                .help("设置")
+            }
+            .padding(.horizontal, 18)
+            .frame(height: 46)
+        }
+    }
+
+    private var currentEnvironmentRule: WiFiRule? { model.rules.first { model.isCurrentNetwork($0) } }
+
+    private var environmentName: String {
+        currentEnvironmentRule?.displayName ?? model.currentNetwork?.name ?? "未连接网络"
     }
 
     private var environmentDestination: PanelRoute? {
@@ -136,245 +244,62 @@ struct MenuBarHomeView: View {
     }
 
     private var environmentActionTitle: String {
-        if model.needsWiFiPermission { return "授权读取" }
-        return currentEnvironmentRule == nil ? "添加规则" : "编辑规则"
-    }
-
-    private var audioSection: some View {
-        MenuBarSection(title: "当前声音") {
-            LocusCard {
-                VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 7) {
-                    LocusIconTile(symbol: model.currentMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    Text(model.currentDevice?.name ?? "未找到输出设备")
-                        .font(.system(size: 12.5, weight: .medium))
-                        .lineLimit(1)
-                    Spacer()
-                    Text(model.currentMuted ? "已静音" : "播放中")
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-                .frame(minHeight: 36)
-
-                HStack(spacing: 9) {
-                    Image(systemName: model.currentMuted ? "speaker.slash" : "speaker.wave.2")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                    Slider(value: Binding(
-                        get: { model.currentVolume },
-                        set: model.setCurrentVolumeInteractively
-                    ), in: 0...1)
-                    Text(model.currentVolume, format: .percent.precision(.fractionLength(0)))
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 36, alignment: .trailing)
-                }
-                .padding(.bottom, 9)
-                }
-            }
-        }
-    }
-
-    private var rulesSection: some View {
-        MenuBarSection(title: "网络规则") {
-            LocusCard {
-                VStack(spacing: 0) {
-                ForEach(Array(orderedRules.enumerated()), id: \.element.id) { index, rule in
-                    if index > 0 { Divider() }
-                    Button {
-                        router.route = .rule(rule.id)
-                    } label: {
-                        ruleRow(rule)
-                    }
-                    .buttonStyle(LocusRowButtonStyle())
-                }
-
-                if !orderedRules.isEmpty { Divider() }
-                Button {
-                    router.route = .addRule
-                } label: {
-                    Label(addRuleTitle, systemImage: "plus")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 8)
-                }
-                .buttonStyle(LocusRowButtonStyle())
-                }
-            }
-        }
-    }
-
-    private func ruleRow(_ rule: WiFiRule) -> some View {
-        HStack(spacing: 9) {
-            LocusIconTile(symbol: ruleIcon(rule), color: isCurrentExact(rule) ? .accentColor : .secondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(rule.displayName)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .lineLimit(1)
-                Text(ruleSubtitle(rule))
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            Text(rule.targetVolume, format: .percent.precision(.fractionLength(0)))
-                .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.tertiary)
-        }
-        .frame(minHeight: LocusDesign.detailedRowHeight)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityHint("打开规则详情")
-    }
-
-    @ViewBuilder
-    private var activitySection: some View {
-        if let activity = model.activities.first {
-            MenuBarSection(title: "最近活动") {
-                LocusCard { Button {
-                    router.route = .activity
-                } label: {
-                    HStack(spacing: 9) {
-                        LocusIconTile(symbol: activitySymbol(activity.kind))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(activity.title)
-                                .font(.system(size: 11.5, weight: .medium))
-                                .lineLimit(1)
-                            Text(locusRelativeTime(from: activity.date))
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .padding(.vertical, 4)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(LocusRowButtonStyle())
-                }
-            }
-        }
-    }
-
-    private var automationFooter: some View {
-        HStack(spacing: 10) {
-            LocusIconTile(symbol: "waveform.path.ecg", color: .accentColor)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("自动控制")
-                    .font(.system(size: 12.5, weight: .medium))
-                Text(model.preferences.automationEnabled ? "监听网络变化" : "当前不会自动应用规则")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Toggle("自动控制", isOn: Binding(
-                get: { model.preferences.automationEnabled },
-                set: model.setAutomationEnabled
-            ))
-            .labelsHidden()
-            .toggleStyle(.switch)
-            .controlSize(.small)
-        }
-        .padding(.horizontal, 11)
-        .frame(height: 54)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: LocusDesign.cardRadius))
-    }
-
-    private var orderedRules: [WiFiRule] {
-        model.rules.sorted { lhs, rhs in
-            let left = sortRank(lhs)
-            let right = sortRank(rhs)
-            return left == right ? lhs.createdAt < rhs.createdAt : left < right
-        }
-    }
-
-    private func sortRank(_ rule: WiFiRule) -> Int {
-        if isCurrentExact(rule) { return 0 }
-        if rule.isFallback { return 2 }
-        return 1
-    }
-
-    private func isCurrentExact(_ rule: WiFiRule) -> Bool {
-        model.isCurrentNetwork(rule)
-    }
-
-    private func ruleIcon(_ rule: WiFiRule) -> String {
-        if rule.isFallback { return "globe" }
-        return rule.kind.symbol
-    }
-
-    private func ruleSubtitle(_ rule: WiFiRule) -> String {
-        guard rule.isEnabled else { return "已停用" }
-        let device = rule.outputDeviceName ?? "保持当前设备"
-        return "\(device) · \(rule.mutePolicy.displayName)"
-    }
-
-    private var addRuleTitle: String {
-        guard let network = model.currentNetwork, network.identifier != nil else { return "添加网络规则" }
-        let hasExact = model.rules.contains { model.isCurrentNetwork($0) }
-        return hasExact ? "添加其他网络" : "为当前\(network.kind.displayName)添加规则"
-    }
-
-    private var environmentSubtitle: String {
-        if let rule = model.matchingRule {
-            return "\(rule.displayName) · 当前规则"
-        }
-        guard let network = model.currentNetwork else { return "等待 Wi‑Fi 或有线网络连接" }
-        if model.needsWiFiPermission { return "需要位置权限才能读取 Wi‑Fi 名称" }
-        if network.identifier == nil { return "等待网络信息就绪" }
-        return network.detail.isEmpty ? "尚未创建规则" : network.detail
-    }
-
-    private var environmentName: String {
-        model.currentNetwork?.name ?? "未连接可识别的网络"
+        if model.needsWiFiPermission { return "授权读取 Wi-Fi 名称" }
+        return currentEnvironmentRule == nil ? "为当前网络添加规则" : "编辑当前网络规则"
     }
 
     private var runtimeText: String {
         switch model.runtimeState {
-        case .applying(let name): return "正在应用“\(name)”"
-        case .ready: return model.matchingRule == nil ? "自动控制已开启" : "当前规则已应用"
-        case .error: return "操作未完成"
+        case .ready:
+            guard let matching = model.matchingRule else { return "此网络尚未设置规则" }
+            guard model.lastAppliedRule == matching else { return "已连接 · 规则已保存" }
+            return matching.isFallback ? "已连接 · 已应用其他网络规则" : "已连接 · 规则已应用"
+        case .applying: return "正在应用声音规则"
+        case .noMatchingRule:
+            guard let currentEnvironmentRule else { return "此网络尚未设置规则" }
+            return currentEnvironmentRule.isEnabled ? "已连接 · 规则已保存" : "当前规则已停用"
+        case .waitingForPermission: return "需要权限才能读取 Wi-Fi 名称"
+        case .error: return "应用失败 · 请查看规则"
         default: return model.runtimeState.shortLabel
         }
     }
 
     private var runtimeSymbol: String {
         switch model.runtimeState {
-        case .ready: return "checkmark.circle.fill"
+        case .ready: return model.matchingRule == nil ? "plus.circle" : model.lastAppliedRule == model.matchingRule ? "checkmark" : "checkmark.circle"
         case .applying, .starting: return "arrow.triangle.2.circlepath"
-        case .paused: return "pause.circle.fill"
-        case .noMatchingRule: return "questionmark.circle"
+        case .paused: return "pause"
+        case .noMatchingRule: return "plus.circle"
         case .disconnected: return "network.slash"
-        case .waitingForPermission, .error: return "exclamationmark.triangle.fill"
+        case .waitingForPermission, .error: return "exclamationmark.circle"
         }
     }
 
     private var runtimeColor: Color {
         switch model.runtimeState {
-        case .ready: return .green
+        case .ready: return model.matchingRule != nil && model.lastAppliedRule == model.matchingRule ? .green : .secondary
         case .applying, .starting: return .accentColor
-        case .paused, .disconnected: return .secondary
-        case .noMatchingRule, .waitingForPermission: return .orange
         case .error: return .red
+        case .waitingForPermission: return .orange
+        default: return .secondary
         }
     }
 
-    private func activitySymbol(_ kind: ActivityKind) -> String {
-        switch kind {
-        case .ruleApplied: return "checkmark.circle"
-        case .networkChanged: return "network"
-        case .outputChanged: return "speaker.wave.2"
-        case .warning: return "exclamationmark.triangle"
+    private func ruleSummary(_ rule: WiFiRule) -> String {
+        if !rule.isEnabled { return "已停用" }
+        return rule.mutePolicy == .mute ? "静音" : "\(Int((rule.targetVolume * 100).rounded()))%"
+    }
+
+    private var orderedRules: [WiFiRule] {
+        model.rules.sorted {
+            let left = model.isCurrentNetwork($0) ? 0 : $0.isFallback ? 2 : 1
+            let right = model.isCurrentNetwork($1) ? 0 : $1.isFallback ? 2 : 1
+            return left == right ? $0.createdAt < $1.createdAt : left < right
         }
     }
 
-    private func openLocationSettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices") else { return }
-        NSWorkspace.shared.open(url)
+    private var activitySummary: String {
+        guard let activity = model.activities.first(where: { $0.kind == .ruleApplied }) else { return "最近活动" }
+        return "\(locusRelativeTime(from: activity.date))应用了声音规则"
     }
 }

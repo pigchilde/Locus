@@ -31,7 +31,7 @@ struct MenuBarRootView: View {
             case .home:
                 MenuBarHomeView()
             case .rule(let id):
-                MenuBarRuleDetailView(ruleID: id)
+                MenuBarRuleDetailView(ruleID: id, initiallyConfirmingDelete: model.isPreview && ProcessInfo.processInfo.environment["LOCUS_PREVIEW_ROUTE"] == "delete")
             case .addRule:
                 MenuBarAddRuleView()
             case .settings:
@@ -48,7 +48,9 @@ struct MenuBarRootView: View {
             removal: .move(edge: .leading).combined(with: .opacity)
         ))
         .frame(width: LocusDesign.panelWidth, height: LocusDesign.panelHeight)
+        .preferredColorScheme(model.preferences.appearance == .system ? nil : model.preferences.appearance == .dark ? .dark : .light)
         .background(LocusPanelBackground())
+        .clipped()
         .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: router.route)
         .onExitCommand {
             if router.route != .home {
