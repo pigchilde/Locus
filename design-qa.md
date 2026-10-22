@@ -1,42 +1,99 @@
-# Locus design QA
+# Locus 原生界面验证记录
 
-## Comparison target
+日期：2026-10-22。当前参照为本次确认的 `designs/locus-native-home/` 主界面设计：左上角仅保留紫色 Logo，网络与运行状态合并，声音集中呈现，紧凑规则列表，底部活动和设置入口。早期 9 月的卡片与权限弹窗方案不再作为本次参照。
 
-- Source visual truth: `/Users/wangwenqing/Downloads/ChatGPT Image 2026年9月22日 23_30_30 (1).png` through `(7).png`
-- Implementation screenshots: `/tmp/locus-design-qa/*.png` and `/tmp/locus-design-qa-dark/*.png`
-- Comparison boards: `/tmp/locus-design-qa/compare-home.jpg`, `compare-rule.jpg`, and `compare-permission.jpg`
-- App viewport: 368 x 580 pt, rendered at 2x as 736 x 1160 pixels
-- Source images: approximately 941 x 1672 pixels; normalized to the implementation width for comparison
-- States: home, add rule, rule detail, settings, activity, permission overlay, delete confirmation; light and dark appearance
+## 已实现
 
-## Full-view evidence
+- 368 × 580pt 菜单栏面板，14pt 内容边距、11pt 连续圆角，系统字体与 SF Symbols。
+- 首页只保留 Logo；自动控制位于右上角，当前环境与生效状态合并。五条规则在默认面板中无需滚动。
+- 规则详情、添加规则、设置、活动记录和权限说明共用同一套字体、分组、间距、按钮与浅色/深色外观。
+- 详情底部固定显示删除及立即应用。删除先确认，取消不会修改规则；兜底规则不可删除。
+- 新网络顶部提供“添加规则”，自动带入当前 Wi-Fi 名称或有线网络信息。规则区另有“＋ 添加”，已有规则会阻止重复添加。
+- 有线规则名称可编辑；网关和接口不再自动塞入新规则默认名称。
+- 区分规则保存和实际应用；编辑后不会直接宣称已应用。
+- 权限说明采用单层页面，保留返回、稍后和明确的授权操作。
 
-The implementation now uses the same visual system as the references: pale blue gray canvas, white grouped cards, rounded icon tiles, compact SF Pro hierarchy, blue active controls, orange permission treatment, red destructive treatment, and a dimmed home screen behind the permission dialog. The 368 x 580 pt product viewport is shorter than the tall reference boards, so long pages scroll while their headers and persistent actions remain available.
+## 编译与测试
 
-## Focused evidence
+- `swift test`：30 项通过，0 失败。其中 20 项核心测试、6 项网络服务测试、4 项新增规则/预览回归测试。
+- `./Scripts/build_app.sh release`：通过；本机架构应用包位于 `dist/Locus.app`。
+- 构建脚本完成 ad-hoc 签名和 `codesign --verify --deep --strict` 校验。
+- `git diff --check`：通过。
 
-- Home comparison verifies the status notice, permission card, environment/audio/rule cards, chevrons, and persistent automation card.
-- Rule comparison verifies the grouped sound controls, icon tiles, picker alignment, slider, notification toggle, and paired destructive/primary actions.
-- Permission comparison verifies the dimmed home context, centered white dialog, orange location mark, explanatory copy, and two-button action row.
-- No raster assets were substituted: all visible UI symbols are native SF Symbols, consistent with the macOS product design.
+## 原生截图检查
 
-## Required fidelity surfaces
+执行 `./Scripts/capture_ui.sh`，生成 40 张浅色/深色原生页面与状态截图，位于：
 
-- Fonts and typography: system SF Pro styles, stronger headers, semibold row titles, secondary descriptions, and matching truncation behavior.
-- Spacing and layout rhythm: 18 pt page margins, grouped cards, 13 pt radii, consistent row heights, and scrollable content within the fixed popover.
-- Colors and tokens: semantic macOS colors plus the reference's pale blue gray light canvas; dark mode uses semantic system surfaces.
-- Image and asset quality: native vector SF Symbols remain sharp at Retina density; no generated or placeholder imagery is present.
-- Copy and content: titles, status descriptions, permission copy, action labels, and rule summaries match the supplied designs and current product behavior.
+`designs/locus-native-home/native-qa/`
 
-## Comparison history
+截图由真实 SwiftUI 视图离屏渲染，不是 HTML 原型截图。每张 736 × 1160px，对应 368 × 580pt。离屏窗口不处于系统前台。本次修正后，开关轨道颜色直接绑定实际值，开启为蓝色、关闭为灰色，不受窗口是否激活影响；无障碍表示仍采用标准 Toggle。
 
-1. Initial implementation used flat sections and separators, with no card grouping or icon tiles. It also showed permission as a separate page.
-2. Fixed by introducing shared card, icon tile, panel background, row, and button components; applying them across all screens; grouping activities by date; and rendering permission as an overlay over the home screen.
-3. Post-fix evidence is recorded in the comparison boards above. No actionable P0, P1, or P2 visual mismatch remains. The taller reference boards show more scroll content simultaneously; the implementation intentionally preserves the required 368 x 580 pt macOS popover.
+| 检查范围 | 结果 |
+| --- | --- |
+| 首页、规则详情、添加规则、设置、活动、权限，共六页的浅色/深色 | 已逐页检查 |
+| 删除确认及兜底规则 | 已检查；删除入口固定，兜底无删除按钮 |
+| 新 Wi-Fi、新有线网络首页与添加页 | 已检查；入口与自动带入数据正确 |
+| 无权限首页与说明页 | 已检查；明确提供授权入口 |
+| 长名称首页与详情 | 已检查；名称截断时“当前”标记仍完整 |
+| 15 条规则列表 | 已检查；列表可滚动，固定底栏保留 |
+| 设备不可用 | 已检查；保留已选设备并提示原因 |
+| 无活动、断网、暂停、错误 | 已检查；空态和状态提示布局正确 |
 
-## Follow-up polish
+第二轮修正了不受支持的网络符号、长名称挤压当前标记、保存规则误报已应用以及预览外观继承，再次构建并生成最终截图。
 
-- P3: validate exact perceived type weight on additional non-Retina displays.
-- P3: tune card shadow opacity after testing against different macOS wallpaper contrast levels.
+## 实际电脑操作
 
-final result: passed
+使用独立的临时预览应用及临时 state.json，不操作用户真实规则、系统音量、启动项或权限：
+
+- 查看六个页面，检查返回、首页进入详情、底部进入设置/活动及设置页上下滚动。
+- 切换预览应用的浅色/深色外观，确认菜单选项与页面外观变化。
+- 编辑当前规则 → 返回显示“规则已保存” → 立即应用 → 返回显示“规则已应用”。
+- 删除确认 → 取消，确认规则仍存在。
+- 确认删除临时当前规则 → 首页出现“添加规则” → 自动带入有线网络 → 输入名称并保存 → 首页恢复当前标记。
+- Wi-Fi 表单填入已存在名称 HOME，确认保存按钮禁用并显示重复提示；填入新名称后可保存。
+- 超过五条规则后滚动列表；兜底详情无删除按钮。
+- 无权限首页进入说明页，稍后返回首页。
+- 自动控制开关可暂停和恢复。
+
+现场截图以 `live-` 开头，包含规则保存状态、删除确认、新网络添加入口、权限说明、深色活动和设置页下半部。预览和真实运行共用同一套视图；预览阻断硬件及权限副作用。
+
+## 验证边界
+
+本轮验证 UI、导航、规则持久化流程与回归测试。没有切换真实 Wi-Fi/网线、弹出真实权限提示、修改系统音量、注册登录启动或发送系统通知；这些真实硬件和系统集成不以预览结果代替验证。未覆盖 `/Applications/Locus.app`，未提交或推送 Git。
+
+## 复现
+
+```sh
+swift test
+./Scripts/build_app.sh release
+./Scripts/capture_ui.sh
+```
+
+指定单页：
+
+```sh
+LOCUS_PREVIEW=1 LOCUS_PREVIEW_ROUTE=rule LOCUS_PREVIEW_APPEARANCE=dark \
+  dist/Locus.app/Contents/MacOS/Locus --preview-window
+```
+
+指定状态：`LOCUS_PREVIEW_SCENARIO=newWiFi`、`newEthernet`、`permission`、`longName`、`manyRules`、`missingDevice`、`emptyActivity`、`disconnected`、`paused` 或 `error`。
+
+## 构建 13：首开开关颜色与 Logo 修正
+
+用户反馈真实菜单栏面板首次打开时，开启的开关仍呈灰色。本轮不再将该现象视为仅离屏截图问题。
+
+- 首页、设置、规则详情共用 `LocusSwitchStyle`，轨道颜色直接取决于绑定值，避免原生非激活窗口颜色覆盖状态。30 × 18pt，保留标准 Toggle 的无障碍表示、原有绑定、禁用状态和减少动态效果。
+- Popover 打开前激活应用，展示后请求成为 key window；首页与设置入口采用同样顺序。
+- Logo 从 23pt 增至 32pt，仍使用已有 512px 透明原图，并指定高质量插值，未重绘品牌图案。
+- 首次打开临时原生窗口时，蓝色开启轨道已实测；点击关闭后无障碍树为 off、状态提示为已暂停，再次开启为 on。
+- 浅色开启、浅色关闭、深色开启，以及各页截图已更新；证据在 `designs/locus-native-home/switch-logo-qa/`。
+- 真实菜单栏 Popover 的电脑控制连接仍超时，这项现场复查未完成。原生窗口和非激活离屏渲染验证均完成，不将其冒充菜单栏首开现场验证。
+- 构建号由 12 增至 13，版本为 1.0.1；重新打包 `dist/Locus.app`，不覆盖已安装应用。
+
+## 构建 14：统一规则名称编辑
+
+- 修正名称编辑条件：所有非兜底规则都显示名称输入框，不再只对有线规则显示；是否连接不影响编辑。
+- Wi-Fi 显示名称与用于匹配的原始 SSID 分离；详情显示只读的“匹配 Wi-Fi”，重命名仅更新 displayName。
+- 已检查未连接 Wi-Fi 规则的浅色、深色原生截图，位于 `designs/locus-native-home/name-editor-qa/`。底部删除及立即应用完整可见。
+- 新增回归测试：未连接 Wi-Fi 规则改名并持久化后，原始网络标识仍保持且能够匹配。完整测试 31 项通过；Release 打包与签名校验通过，版本 1.0.1（14）。
+- 批量截图脚本补充 wifiRule 路由，后续完整运行生成 42 张截图。
