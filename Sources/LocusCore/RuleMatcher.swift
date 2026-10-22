@@ -6,10 +6,17 @@ public enum RuleMatcher {
         in rules: [WiFiRule],
         useFallback: Bool
     ) -> WiFiRule? {
-        guard let ssid, !ssid.isEmpty else { return nil }
+        matchingRule(for: ssid, kind: .wifi, in: rules, useFallback: useFallback)
+    }
+
+    public static func matchingRule(
+        for identifier: String?, kind: NetworkKind,
+        in rules: [WiFiRule], useFallback: Bool
+    ) -> WiFiRule? {
+        guard let identifier, !identifier.isEmpty else { return nil }
 
         if let exact = rules.first(where: {
-            !$0.isFallback && $0.isEnabled && $0.ssid == ssid
+            !$0.isFallback && $0.isEnabled && $0.kind == kind && $0.ssid == identifier
         }) {
             return exact
         }

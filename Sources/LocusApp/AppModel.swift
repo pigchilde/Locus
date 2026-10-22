@@ -14,6 +14,7 @@ final class AppModel: ObservableObject {
         case paused(Date)
         case applying(String)
         case noMatchingRule
+        case disconnected
         case error(String)
 
         var shortLabel: String {
@@ -24,6 +25,7 @@ final class AppModel: ObservableObject {
             case .paused: return "自动控制已暂停"
             case .applying: return "正在应用规则"
             case .noMatchingRule: return "当前网络没有规则"
+            case .disconnected: return "未连接可识别的网络"
             case .error: return "需要处理"
             }
         }
@@ -32,7 +34,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var rules: [WiFiRule]
     @Published private(set) var preferences: AppPreferences
     @Published private(set) var activities: [ActivityRecord]
-    @Published private(set) var currentSSID: String?
+    @Published private(set) var currentNetwork: NetworkConnection?
     @Published private(set) var currentVolume: Double = 0
     @Published private(set) var currentMuted = false
     @Published private(set) var currentDevice: AudioOutputDevice?
@@ -45,25 +47,25 @@ final class AppModel: ObservableObject {
 
     private let repository: StateRepository
     private let audio: CoreAudioService
-    private let wifi: WiFiService
+    private let network: NetworkService
     private let notifications: NotificationService
     private var networkTask: Task<Void, Never>?
     private var volumeTask: Task<Void, Never>?
     private var interactiveVolumeTask: Task<Void, Never>?
     private var pausedUntil: Date?
-    private var lastObservedSSID: String?
+    private var hasObservedNetwork = false
     private var hasStarted = false
 
     init(
         repository: StateRepository = StateRepository(),
         audio: CoreAudioService = CoreAudioService(),
-        wifi: WiFiService = WiFiService(),
+        network: NetworkService = NetworkService(),
         permissions: PermissionService = PermissionService(),
         notifications: NotificationService = NotificationService()
     ) {
         self.repository = repository
         self.audio = audio
-        self.wifi = wifi
+        self.network = network
         self.permissions = permissions
         self.notifications = notifications
 
@@ -79,7 +81,7 @@ final class AppModel: ObservableObject {
 
         self.permissions.onAuthorizationChanged = { [weak self] in
             Task { @MainActor in
-                self?.restartWiFiMonitoring()
+                self?.restartNetworkMonitoring()
             }
         }
     }
@@ -89,35 +91,36 @@ final class AppModel: ObservableObject {
         hasStarted = true
         applyAppearance()
         refreshAudioState()
-        restartWiFiMonitoring()
+        restartNetworkMonitoring()
         Task { await refreshNotificationAuthorizationStatus() }
         preferences.launchAtLogin = LaunchAtLoginService.isEnabled
         persist()
     }
 
-    func restartWiFiMonitoring() {
-        wifi.stopMonitoring()
+    func restartNetworkMonitoring() {
         do {
-            try wifi.startMonitoring { [weak self] ssid in
-                Task { @MainActor in
-                    self?.handleSSIDChange(ssid)
-                }
-            }
-            if !permissions.canReadWiFiName, wifi.currentSSID == nil {
-                runtimeState = .waitingForPermission
+            try network.startMonitoring { [weak self] connection in
+                // NetworkService delivers on the main queue, including its initial snapshot.
+                self?.handleNetworkChange(connection)
             }
         } catch {
             report(error)
         }
     }
 
-    /// Refreshes values shown in the menu bar without reapplying an unchanged rule.
+    /// Refresh the panel without reapplying an unchanged network rule.
     func refreshSnapshot() {
         refreshAudioState()
-        let latestSSID = wifi.currentSSID
-        if latestSSID != currentSSID {
-            handleSSIDChange(latestSSID, recordActivity: false)
-        }
+        handleNetworkChange(network.currentConnection, recordActivity: false)
+    }
+
+    var needsWiFiPermission: Bool {
+        currentNetwork?.kind == .wifi && currentNetwork?.identifier == nil && !permissions.canReadWiFiName
+    }
+
+    func isCurrentNetwork(_ rule: WiFiRule) -> Bool {
+        guard !rule.isFallback, let currentNetwork, let identifier = currentNetwork.identifier else { return false }
+        return rule.kind == currentNetwork.kind && rule.ssid == identifier
     }
 
     func refreshAudioState() {
@@ -162,16 +165,18 @@ final class AppModel: ObservableObject {
     @discardableResult
     func addRule(
         ssid rawSSID: String,
+        networkKind: NetworkKind = .wifi,
+        displayName: String? = nil,
         volume: Double,
         outputDeviceUID: String?
     ) -> WiFiRule? {
-        let ssid = RuleMatcher.normalizedSSID(rawSSID)
+        let ssid = networkKind == .wifi ? RuleMatcher.normalizedSSID(rawSSID) : rawSSID
         guard !ssid.isEmpty else {
-            lastErrorMessage = "请输入 Wi‑Fi 名称。"
+            lastErrorMessage = "无法识别网络，请等待网络连接稳定后再试。"
             return nil
         }
 
-        if let existing = rules.first(where: { !$0.isFallback && $0.ssid == ssid }) {
+        if let existing = rules.first(where: { !$0.isFallback && $0.kind == networkKind && $0.ssid == ssid }) {
             lastErrorMessage = "这个网络已经有一条规则。"
             return existing
         }
@@ -179,6 +184,8 @@ final class AppModel: ObservableObject {
         let selectedDevice = availableDevices.first(where: { $0.uid == outputDeviceUID })
         let rule = WiFiRule(
             ssid: ssid,
+            networkKind: networkKind,
+            displayName: displayName,
             outputDeviceUID: selectedDevice?.uid,
             outputDeviceName: selectedDevice?.name,
             targetVolume: volume
@@ -279,7 +286,8 @@ final class AppModel: ObservableObject {
 
     var matchingRule: WiFiRule? {
         RuleMatcher.matchingRule(
-            for: currentSSID,
+            for: currentNetwork?.identifier,
+            kind: currentNetwork?.kind ?? .wifi,
             in: rules,
             useFallback: preferences.useFallbackRule
         )
@@ -290,20 +298,25 @@ final class AppModel: ObservableObject {
         return pausedUntil > Date()
     }
 
-    private func handleSSIDChange(_ ssid: String?, recordActivity: Bool = true) {
-        currentSSID = ssid
-        if recordActivity, ssid != lastObservedSSID, let ssid {
+    private func handleNetworkChange(_ connection: NetworkConnection?, recordActivity: Bool = true) {
+        let previous = currentNetwork
+        currentNetwork = connection
+        // Interface labels/address updates do not reapply an unchanged rule.
+        let changed = !hasObservedNetwork || previous?.kind != connection?.kind
+            || previous?.identifier != connection?.identifier
+        hasObservedNetwork = true
+        guard changed else {
+            if runtimeState == .waitingForPermission { scheduleMatchingRuleApplication() }
+            return
+        }
+        networkTask?.cancel()
+        volumeTask?.cancel()
+        if recordActivity {
             appendActivity(ActivityRecord(
                 kind: .networkChanged,
-                title: "已连接 \(ssid)",
-                detail: "正在查找匹配的音量规则"
+                title: connection.map { "已连接 \($0.name)" } ?? "网络已断开",
+                detail: connection.flatMap { $0.detail.isEmpty ? nil : $0.detail } ?? "正在更新声音规则"
             ))
-        }
-        lastObservedSSID = ssid
-
-        guard permissions.canReadWiFiName || ssid != nil else {
-            runtimeState = .waitingForPermission
-            return
         }
         scheduleMatchingRuleApplication()
     }
@@ -321,8 +334,16 @@ final class AppModel: ObservableObject {
         }
         pausedUntil = nil
 
+        guard currentNetwork != nil else {
+            runtimeState = .disconnected
+            return
+        }
+        guard !needsWiFiPermission else {
+            runtimeState = .waitingForPermission
+            return
+        }
         guard let rule = matchingRule else {
-            runtimeState = currentSSID == nil ? .waitingForPermission : .noMatchingRule
+            runtimeState = .noMatchingRule
             return
         }
 
@@ -345,6 +366,7 @@ final class AppModel: ObservableObject {
                currentDevice?.uid != uid {
                 try audio.setOutputDevice(uid: uid)
                 try? await Task.sleep(for: .milliseconds(250))
+                try Task.checkCancellation()
                 currentDevice = try audio.currentOutputDevice()
                 availableDevices = try audio.outputDevices()
             }
@@ -368,6 +390,7 @@ final class AppModel: ObservableObject {
                 }
             }
 
+            try Task.checkCancellation()
             switch rule.mutePolicy {
             case .keep: break
             case .unmute: try audio.setMuted(false)
@@ -386,10 +409,12 @@ final class AppModel: ObservableObject {
 
             if rule.showsNotification {
                 notifications.postRuleApplied(
-                    ssid: currentSSID ?? rule.displayName,
+                    ssid: currentNetwork?.name ?? rule.displayName,
                     volume: rule.targetVolume
                 )
             }
+        } catch is CancellationError {
+            return
         } catch {
             report(error)
         }

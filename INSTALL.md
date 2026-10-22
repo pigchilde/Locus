@@ -38,7 +38,7 @@ open "/Applications/Locus.app"
 
 ## 4. 允许读取 Wi-Fi 名称
 
-Locus 第一次运行时会申请位置权限。macOS 要求获得该权限后，CoreWLAN 才能提供当前 Wi-Fi 的 SSID。
+使用有线网络无需位置权限。需要识别 Wi-Fi 名称时，请在 Locus 中申请位置权限。macOS 要求获得该权限后，CoreWLAN 才能提供当前 Wi-Fi 的 SSID。
 
 Locus 不读取、保存或上传实际地理位置。若之前拒绝授权，可以前往：
 

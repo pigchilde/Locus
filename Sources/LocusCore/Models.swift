@@ -70,6 +70,9 @@ public struct AudioOutputDevice: Codable, Hashable, Identifiable, Sendable {
 public struct WiFiRule: Codable, Hashable, Identifiable, Sendable {
     public var id: UUID
     public var ssid: String
+    // Optional on disk so rules written before Ethernet support remain readable.
+    public var networkKind: NetworkKind?
+    public var kind: NetworkKind { networkKind ?? .wifi }
     public var displayName: String
     public var outputDeviceUID: String?
     public var outputDeviceName: String?
@@ -85,6 +88,7 @@ public struct WiFiRule: Codable, Hashable, Identifiable, Sendable {
     public init(
         id: UUID = UUID(),
         ssid: String,
+        networkKind: NetworkKind? = nil,
         displayName: String? = nil,
         outputDeviceUID: String? = nil,
         outputDeviceName: String? = nil,
@@ -99,6 +103,7 @@ public struct WiFiRule: Codable, Hashable, Identifiable, Sendable {
     ) {
         self.id = id
         self.ssid = ssid
+        self.networkKind = networkKind
         self.displayName = displayName ?? ssid
         self.outputDeviceUID = outputDeviceUID
         self.outputDeviceName = outputDeviceName

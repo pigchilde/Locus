@@ -63,8 +63,9 @@ struct MenuBarRuleDetailView: View {
     private func statusSection(_ rule: WiFiRule) -> some View {
         MenuBarSection(title: "规则") {
             LocusCard { MenuBarRow(
-                title: rule.isFallback ? "其他网络" : rule.ssid,
-                subtitle: rule.isFallback ? "未保存网络的默认规则" : currentRuleDescription(rule)
+                title: rule.isFallback ? "其他网络" : rule.displayName,
+                subtitle: rule.isFallback ? "未保存网络的默认规则" : currentRuleDescription(rule),
+                icon: rule.isFallback ? "globe" : rule.kind.symbol
             ) {
                 Toggle("启用规则", isOn: binding(rule, \.isEnabled))
                     .labelsHidden()
@@ -198,7 +199,7 @@ struct MenuBarRuleDetailView: View {
                         Text("删除“\(rule.displayName)”？")
                             .font(.system(size: 12.5, weight: .semibold))
                     }
-                    Text("以后连接此 Wi‑Fi 时将不再自动调整声音。")
+                    Text("以后连接此网络时将不再自动调整声音。")
                         .font(.system(size: 10.5))
                         .foregroundStyle(.secondary)
                     HStack {
@@ -288,10 +289,10 @@ struct MenuBarRuleDetailView: View {
     }
 
     private func currentRuleDescription(_ rule: WiFiRule) -> String {
-        if model.currentSSID == rule.ssid {
+        if model.isCurrentNetwork(rule) {
             return model.matchingRule?.id == rule.id ? "当前已连接并匹配" : "当前已连接"
         }
-        return "连接此 Wi‑Fi 时自动应用"
+        return "连接此\(rule.kind.displayName)时自动应用"
     }
 
     private func isApplying(_ rule: WiFiRule) -> Bool {

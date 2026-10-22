@@ -35,7 +35,7 @@ struct MenuBarSettingsView: View {
     private var generalSection: some View {
         MenuBarSection(title: "通用") {
             LocusCard { VStack(spacing: 0) {
-                MenuBarRow(title: "自动控制", subtitle: "监听 Wi‑Fi 变化并应用规则", icon: "waveform.path.ecg", iconColor: .accentColor) {
+                MenuBarRow(title: "自动控制", subtitle: "监听 Wi‑Fi 和有线网络变化并应用规则", icon: "waveform.path.ecg", iconColor: .accentColor) {
                     Toggle("自动控制", isOn: Binding(
                         get: { model.preferences.automationEnabled },
                         set: model.setAutomationEnabled

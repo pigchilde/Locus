@@ -24,7 +24,7 @@ struct MenuBarHomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: LocusDesign.sectionSpacing) {
                     runtimeStatus
-                    if !permissions.canReadWiFiName {
+                    if model.needsWiFiPermission {
                         permissionNotice
                     }
                     environmentSection
@@ -90,11 +90,54 @@ struct MenuBarHomeView: View {
     private var environmentSection: some View {
         MenuBarSection(title: "当前环境") {
             LocusCard {
-                MenuBarRow(title: environmentName, subtitle: environmentSubtitle, icon: "wifi") {
-                    EmptyView()
+                if let destination = environmentDestination {
+                    Button {
+                        router.route = destination
+                    } label: {
+                        environmentRow
+                    }
+                    .buttonStyle(LocusRowButtonStyle())
+                    .help(environmentActionTitle)
+                    .accessibilityLabel("\(environmentName)，\(environmentActionTitle)")
+                    .accessibilityHint("打开当前网络的规则设置")
+                } else {
+                    environmentRow
                 }
             }
         }
+    }
+
+    private var environmentRow: some View {
+        MenuBarRow(title: environmentName, subtitle: environmentSubtitle,
+                   icon: model.currentNetwork?.kind.symbol ?? "network.slash") {
+            if environmentDestination != nil {
+                HStack(spacing: 5) {
+                    Text(environmentActionTitle)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    private var currentEnvironmentRule: WiFiRule? {
+        // Include disabled exact rules so this opens their settings instead of
+        // attempting to add a duplicate or editing the shared fallback rule.
+        model.rules.first { model.isCurrentNetwork($0) }
+    }
+
+    private var environmentDestination: PanelRoute? {
+        if model.needsWiFiPermission { return .permission }
+        guard model.currentNetwork?.identifier?.isEmpty == false else { return nil }
+        return currentEnvironmentRule.map { .rule($0.id) } ?? .addRule
+    }
+
+    private var environmentActionTitle: String {
+        if model.needsWiFiPermission { return "授权读取" }
+        return currentEnvironmentRule == nil ? "添加规则" : "编辑规则"
     }
 
     private var audioSection: some View {
@@ -133,7 +176,7 @@ struct MenuBarHomeView: View {
     }
 
     private var rulesSection: some View {
-        MenuBarSection(title: "Wi‑Fi 规则") {
+        MenuBarSection(title: "网络规则") {
             LocusCard {
                 VStack(spacing: 0) {
                 ForEach(Array(orderedRules.enumerated()), id: \.element.id) { index, rule in
@@ -224,7 +267,7 @@ struct MenuBarHomeView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("自动控制")
                     .font(.system(size: 12.5, weight: .medium))
-                Text(model.preferences.automationEnabled ? "监听 Wi‑Fi 变化" : "当前不会自动应用规则")
+                Text(model.preferences.automationEnabled ? "监听网络变化" : "当前不会自动应用规则")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
@@ -257,12 +300,12 @@ struct MenuBarHomeView: View {
     }
 
     private func isCurrentExact(_ rule: WiFiRule) -> Bool {
-        !rule.isFallback && rule.ssid == model.currentSSID
+        model.isCurrentNetwork(rule)
     }
 
     private func ruleIcon(_ rule: WiFiRule) -> String {
         if rule.isFallback { return "globe" }
-        return isCurrentExact(rule) ? "wifi" : "wifi"
+        return rule.kind.symbol
     }
 
     private func ruleSubtitle(_ rule: WiFiRule) -> String {
@@ -272,24 +315,23 @@ struct MenuBarHomeView: View {
     }
 
     private var addRuleTitle: String {
-        guard let ssid = model.currentSSID else { return "添加 Wi‑Fi 规则" }
-        let hasExact = model.rules.contains { !$0.isFallback && $0.ssid == ssid }
-        return hasExact ? "添加其他 Wi‑Fi" : "为“\(ssid)”添加规则"
+        guard let network = model.currentNetwork, network.identifier != nil else { return "添加网络规则" }
+        let hasExact = model.rules.contains { model.isCurrentNetwork($0) }
+        return hasExact ? "添加其他网络" : "为当前\(network.kind.displayName)添加规则"
     }
 
     private var environmentSubtitle: String {
         if let rule = model.matchingRule {
             return "\(rule.displayName) · 当前规则"
         }
-        if model.currentSSID == nil {
-            return permissions.canReadWiFiName ? "当前没有可用的无线网络" : "无法读取网络名称"
-        }
-        return "尚未创建规则"
+        guard let network = model.currentNetwork else { return "等待 Wi‑Fi 或有线网络连接" }
+        if model.needsWiFiPermission { return "需要位置权限才能读取 Wi‑Fi 名称" }
+        if network.identifier == nil { return "等待网络信息就绪" }
+        return network.detail.isEmpty ? "尚未创建规则" : network.detail
     }
 
     private var environmentName: String {
-        if let ssid = model.currentSSID, !ssid.isEmpty { return ssid }
-        return permissions.canReadWiFiName ? "未连接 Wi‑Fi" : "无法读取 Wi‑Fi 名称"
+        model.currentNetwork?.name ?? "未连接可识别的网络"
     }
 
     private var runtimeText: String {
@@ -307,6 +349,7 @@ struct MenuBarHomeView: View {
         case .applying, .starting: return "arrow.triangle.2.circlepath"
         case .paused: return "pause.circle.fill"
         case .noMatchingRule: return "questionmark.circle"
+        case .disconnected: return "network.slash"
         case .waitingForPermission, .error: return "exclamationmark.triangle.fill"
         }
     }
@@ -315,7 +358,7 @@ struct MenuBarHomeView: View {
         switch model.runtimeState {
         case .ready: return .green
         case .applying, .starting: return .accentColor
-        case .paused: return .secondary
+        case .paused, .disconnected: return .secondary
         case .noMatchingRule, .waitingForPermission: return .orange
         case .error: return .red
         }
@@ -324,7 +367,7 @@ struct MenuBarHomeView: View {
     private func activitySymbol(_ kind: ActivityKind) -> String {
         switch kind {
         case .ruleApplied: return "checkmark.circle"
-        case .networkChanged: return "wifi"
+        case .networkChanged: return "network"
         case .outputChanged: return "speaker.wave.2"
         case .warning: return "exclamationmark.triangle"
         }

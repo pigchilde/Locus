@@ -13,7 +13,7 @@ struct MenuBarActivityView: View {
                 ContentUnavailableView(
                     "暂无活动",
                     systemImage: "clock.arrow.circlepath",
-                    description: Text("连接 Wi‑Fi 或应用规则后，记录会显示在这里。")
+                    description: Text("连接网络或应用规则后，记录会显示在这里。")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {

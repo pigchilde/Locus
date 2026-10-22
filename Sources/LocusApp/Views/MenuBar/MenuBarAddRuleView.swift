@@ -6,6 +6,9 @@ struct MenuBarAddRuleView: View {
     @EnvironmentObject private var router: PanelRouter
 
     @State private var ssid = ""
+    @State private var networkKind: NetworkKind = .wifi
+    @State private var wiredNetwork: NetworkConnection?
+    @State private var wiredName = ""
     @State private var volume = 0.35
     @State private var outputDeviceUID: String?
     @State private var didEditSSID = false
@@ -18,23 +21,48 @@ struct MenuBarAddRuleView: View {
                 VStack(alignment: .leading, spacing: LocusDesign.sectionSpacing) {
                     MenuBarSection(title: "网络") {
                         LocusCard {
-                            HStack(alignment: .top, spacing: 10) {
-                                LocusIconTile(symbol: "wifi")
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("Wi‑Fi 名称").font(.system(size: 12.5, weight: .semibold))
-                                    TextField("例如 Home Wi‑Fi", text: Binding(
-                                get: { ssid },
-                                set: {
-                                    didEditSSID = true
-                                    ssid = String($0.prefix(32))
+                            VStack(alignment: .leading, spacing: 10) {
+                                Picker("连接方式", selection: $networkKind) {
+                                    ForEach(NetworkKind.allCases) { kind in
+                                        Text(kind.displayName).tag(kind)
+                                    }
                                 }
-                                    ))
-                                .textFieldStyle(.roundedBorder)
-                                    if didEditSSID, let validationMessage {
-                                Label(validationMessage, systemImage: "exclamationmark.circle.fill")
-                                    .font(.system(size: 10.5))
-                                    .foregroundStyle(.red)
-                                    .accessibilityLabel(validationMessage)
+                                .pickerStyle(.segmented)
+                                HStack(alignment: .top, spacing: 10) {
+                                    LocusIconTile(symbol: networkKind.symbol)
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        if networkKind == .wifi {
+                                            Text("Wi‑Fi 名称").font(.system(size: 12.5, weight: .semibold))
+                                            TextField("例如 Home Wi‑Fi", text: Binding(
+                                                get: { ssid },
+                                                set: {
+                                                    didEditSSID = true
+                                                    ssid = String($0.prefix(32))
+                                                }
+                                            ))
+                                            .textFieldStyle(.roundedBorder)
+                                        } else if let wiredNetwork {
+                                            Text("规则名称").font(.system(size: 12.5, weight: .semibold))
+                                            TextField("例如 办公室有线网络", text: $wiredName)
+                                                .textFieldStyle(.roundedBorder)
+                                            Text(wiredNetwork.detail)
+                                                .font(.system(size: 10.5))
+                                                .foregroundStyle(.secondary)
+                                            Text("保存后，之后连接此网络时自动匹配。")
+                                                .font(.system(size: 10.5))
+                                                .foregroundStyle(.secondary)
+                                        } else {
+                                            Text("请先连接有线网络")
+                                                .font(.system(size: 12.5, weight: .semibold))
+                                            Text("使用系统当前主网络创建有线规则。")
+                                                .font(.system(size: 10.5))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        if (didEditSSID || networkKind == .ethernet), let validationMessage {
+                                            Label(validationMessage, systemImage: "exclamationmark.circle.fill")
+                                                .font(.system(size: 10.5))
+                                                .foregroundStyle(.red)
+                                        }
                                     }
                                 }
                             }.padding(.vertical, 11)
@@ -88,7 +116,9 @@ struct MenuBarAddRuleView: View {
                 Spacer()
                 Button {
                     guard model.addRule(
-                        ssid: ssid,
+                        ssid: networkKind == .wifi ? ssid : wiredNetwork?.identifier ?? "",
+                        networkKind: networkKind,
+                        displayName: networkKind == .ethernet ? wiredName.trimmingCharacters(in: .whitespacesAndNewlines) : nil,
                         volume: volume,
                         outputDeviceUID: outputDeviceUID
                     ) != nil else { return }
@@ -104,9 +134,12 @@ struct MenuBarAddRuleView: View {
             .frame(height: LocusDesign.bottomBarHeight)
         }
         .onAppear {
-            if let currentSSID = model.currentSSID,
-               !model.rules.contains(where: { !$0.isFallback && $0.ssid == currentSSID }) {
-                ssid = currentSSID
+            let current = model.currentNetwork
+            networkKind = current?.kind ?? .wifi
+            updateWiredNetwork(current)
+            if current?.kind == .wifi, let identifier = current?.identifier,
+               !model.rules.contains(where: { !$0.isFallback && $0.kind == .wifi && $0.ssid == identifier }) {
+                ssid = identifier
             } else {
                 ssid = ""
             }
@@ -115,13 +148,32 @@ struct MenuBarAddRuleView: View {
             didEditSSID = false
             model.lastErrorMessage = nil
         }
+        .onChange(of: model.currentNetwork) { _, connection in
+            updateWiredNetwork(connection)
+        }
+    }
+
+    private func updateWiredNetwork(_ connection: NetworkConnection?) {
+        let oldDefaultName = wiredNetwork.map { "有线网络 · \($0.detail)" }
+        let usesDefaultName = wiredName.isEmpty || wiredName == oldDefaultName
+        wiredNetwork = connection?.kind == .ethernet ? connection : nil
+        if usesDefaultName {
+            wiredName = wiredNetwork.map { "有线网络 · \($0.detail)" } ?? ""
+        }
     }
 
     private var validationMessage: String? {
-        let normalized = RuleMatcher.normalizedSSID(ssid)
-        if normalized.isEmpty { return "请输入 Wi‑Fi 名称" }
-        if model.rules.contains(where: { !$0.isFallback && $0.ssid == normalized }) {
-            return "该 Wi‑Fi 已有规则"
+        let identifier: String
+        if networkKind == .wifi {
+            identifier = RuleMatcher.normalizedSSID(ssid)
+            if identifier.isEmpty { return "请输入 Wi‑Fi 名称" }
+        } else {
+            guard let value = wiredNetwork?.identifier else { return "等待有线网络信息就绪后重新添加" }
+            identifier = value
+            if wiredName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "请输入规则名称" }
+        }
+        if model.rules.contains(where: { !$0.isFallback && $0.kind == networkKind && $0.ssid == identifier }) {
+            return "该网络已有规则"
         }
         return nil
     }

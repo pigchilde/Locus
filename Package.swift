@@ -24,12 +24,17 @@ let package = Package(
                 .linkedFramework("CoreLocation"),
                 .linkedFramework("CoreWLAN"),
                 .linkedFramework("ServiceManagement"),
+                .linkedFramework("SystemConfiguration"),
                 .linkedFramework("UserNotifications")
             ]
         ),
         .testTarget(
             name: "LocusCoreTests",
             dependencies: ["LocusCore"]
+        ),
+        .testTarget(
+            name: "LocusAppTests",
+            dependencies: ["LocusApp"]
         )
     ],
     swiftLanguageModes: [.v5]

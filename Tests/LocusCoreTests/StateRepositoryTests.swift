@@ -3,6 +3,25 @@ import XCTest
 @testable import LocusCore
 
 final class StateRepositoryTests: XCTestCase {
+    func testOldRulesWithoutNetworkKindRemainWiFiRules() throws {
+        let original = WiFiRule(ssid: "Home", targetVolume: 0.3)
+        let data = try JSONEncoder().encode(original)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object.removeValue(forKey: "networkKind")
+        let legacy = try JSONDecoder().decode(WiFiRule.self,
+            from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(legacy.kind, .wifi)
+        XCTAssertEqual(legacy, original)
+    }
+
+    func testWiredRulesRoundTripWithTheirIdentityAndDisplayName() throws {
+        let original = WiFiRule(ssid: "signature:office-router", networkKind: .ethernet,
+            displayName: "办公室", targetVolume: 0.2)
+        let decoded = try JSONDecoder().decode(WiFiRule.self, from: JSONEncoder().encode(original))
+        XCTAssertEqual(decoded, original)
+        XCTAssertEqual(decoded.kind, .ethernet)
+    }
+
     func testStateRoundTripPreservesRulesAndPreferences() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
