@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var isPreviewMode: Bool {
         ProcessInfo.processInfo.arguments.contains("--preview-window")
             || ProcessInfo.processInfo.environment["LOCUS_PREVIEW"] == "1"
+            || Bundle.main.object(forInfoDictionaryKey: "LocusPreviewMode") as? Bool == true
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -47,69 +48,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func makeAppModel() -> AppModel {
         guard isPreviewMode else { return AppModel() }
-        return AppModel(repository: makePreviewRepository())
+        let preview = LocusPreviewState(scenario: ProcessInfo.processInfo.environment["LOCUS_PREVIEW_SCENARIO"] ?? "ready")
+        return AppModel(repository: makePreviewRepository(preview), preview: preview)
     }
 
     /// Preview launches run on throwaway sample data so that taking screenshots
     /// never writes real state or applies rules to system audio.
-    private func makePreviewRepository() -> StateRepository {
+    private func makePreviewRepository(_ preview: LocusPreviewState) -> StateRepository {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LocusPreviewState-\(UUID().uuidString).json")
         let repository = StateRepository(fileURL: fileURL)
-        let now = Date()
-        let previewAppearance: AppearanceMode = ProcessInfo.processInfo.environment["LOCUS_PREVIEW_APPEARANCE"] == "dark"
-            ? .dark
-            : .light
-        try? repository.save(PersistedState(
-            rules: [
-                WiFiRule(
-                    ssid: "Home-5G",
-                    targetVolume: 0.55,
-                    transition: .oneSecond
-                ),
-                WiFiRule(
-                    ssid: "Office-Meeting",
-                    outputDeviceUID: "preview-device-unavailable",
-                    outputDeviceName: "会议音响",
-                    targetVolume: 0.3,
-                    mutePolicy: .mute,
-                    transition: .threeSeconds
-                ),
-                .defaultFallback,
-            ],
-            preferences: AppPreferences(
-                automationEnabled: true,
-                switchDelay: 1,
-                useFallbackRule: false,
-                appearance: previewAppearance
-            ),
-            activities: [
-                ActivityRecord(
-                    kind: .ruleApplied,
-                    title: "已应用 Home-5G",
-                    detail: "系统音量已调整至 55%",
-                    date: now.addingTimeInterval(-95)
-                ),
-                ActivityRecord(
-                    kind: .networkChanged,
-                    title: "已连接 Home-5G",
-                    detail: "正在查找匹配的音量规则",
-                    date: now.addingTimeInterval(-100)
-                ),
-                ActivityRecord(
-                    kind: .outputChanged,
-                    title: "输出设备已切换",
-                    detail: "MacBook Pro 扬声器",
-                    date: now.addingTimeInterval(-3600)
-                ),
-                ActivityRecord(
-                    kind: .warning,
-                    title: "操作未完成",
-                    detail: "目标音频设备当前不可用",
-                    date: now.addingTimeInterval(-86400)
-                ),
-            ]
-        ))
+        var state = preview.persisted
+        state.preferences.appearance = ProcessInfo.processInfo.environment["LOCUS_PREVIEW_APPEARANCE"] == "dark" ? .dark : .light
+        try? repository.save(state)
         return repository
     }
 
@@ -127,8 +78,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func routeForPreview(_ route: String) -> PanelRoute {
         switch route {
-        case "rule":
+        case "rule", "delete":
             return model.rules.first(where: { !$0.isFallback }).map { PanelRoute.rule($0.id) } ?? .home
+        case "fallback": return model.rules.first(where: \.isFallback).map { .rule($0.id) } ?? .home
+        case "wifiRule":
+            return model.rules.first(where: { !$0.isFallback && $0.kind == .wifi }).map { .rule($0.id) } ?? .home
         case "addRule": return .addRule
         case "settings": return .settings
         case "activity": return .activity
@@ -151,39 +105,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// app's own view hierarchy avoids the Screen Recording permission that
     /// `screencapture` requires for window capture.
     private func capturePreviewImage(route: PanelRoute, outputURL: URL) {
-        let size: NSSize
-        let contentView: NSView
-        let isDeleteConfirmationPreview = ProcessInfo.processInfo.environment["LOCUS_PREVIEW_ROUTE"] == "delete"
-        if isDeleteConfirmationPreview,
-                  let rule = model.rules.first(where: { !$0.isFallback }) {
-            size = NSSize(width: 368, height: 580)
-            contentView = NSHostingView(
-                rootView: MenuBarRuleDetailView(
-                    ruleID: rule.id,
-                    initiallyConfirmingDelete: true
-                )
-                .frame(width: 368, height: 580)
-                .background(Color(nsColor: .windowBackgroundColor))
-                .environmentObject(model)
-                .environmentObject(router)
-            )
-        } else {
-            size = NSSize(width: 368, height: 580)
-            router.route = route
-            contentView = NSHostingView(
-                rootView: MenuBarRootView {
-                    NSApplication.shared.terminate(nil)
-                }
-                .environmentObject(model)
-                .environmentObject(model.permissions)
-                .environmentObject(router)
-            )
+        let size = NSSize(width: LocusDesign.panelWidth, height: LocusDesign.panelHeight)
+        router.route = route
+        let rootView = MenuBarRootView {
+            NSApplication.shared.terminate(nil)
         }
+        .environmentObject(model)
+        .environmentObject(model.permissions)
+        .environmentObject(router)
+        .environment(\.controlActiveState, .active)
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.contentViewController = NSHostingController(rootView: rootView)
+        window.appearance = NSApp.appearance
+        // Attaching to a window runs SwiftUI lifecycle/layout without presenting UI.
+        let contentView = window.contentView!
         contentView.frame = NSRect(origin: .zero, size: size)
         contentView.layoutSubtreeIfNeeded()
+        previewWindow = window
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            let scale = NSScreen.main?.backingScaleFactor ?? 2
+            contentView.layoutSubtreeIfNeeded()
+            contentView.displayIfNeeded()
+            let scale: CGFloat = 2
             guard let rep = NSBitmapImageRep(
                 bitmapDataPlanes: nil,
                 pixelsWide: Int(size.width * scale),
@@ -307,8 +253,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         router.route = .settings
         guard !popover.isShown, let button = statusItem?.button else { return }
         model.refreshSnapshot()
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         NSApplication.shared.activate(ignoringOtherApps: true)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
         button.highlight(true)
     }
 
@@ -322,8 +269,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         router.showHome()
         model.refreshSnapshot()
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         NSApplication.shared.activate(ignoringOtherApps: true)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
         button.highlight(true)
     }
 
