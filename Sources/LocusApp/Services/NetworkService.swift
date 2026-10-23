@@ -27,7 +27,12 @@ final class NetworkService: NSObject, CWEventDelegate {
             else { continue }
 
             let type = interface["Type"] as? String
-            if type == (kSCNetworkInterfaceTypeIEEE80211 as String) {
+            let hardware = interface["Hardware"] as? String
+            // The dynamic store uses Type=Ethernet for Wi-Fi too; Hardware=AirPort
+            // distinguishes it. Check this before the wired branch, independently of
+            // SSID access, interface numbering, and the user-editable service name.
+            if hardware == (kSCEntNetAirPort as String)
+                || type == (kSCNetworkInterfaceTypeIEEE80211 as String) {
                 let ssid = ssid(interfaceName)
                 return NetworkConnection(kind: .wifi, identifier: ssid,
                     name: ssid ?? "无法读取 Wi‑Fi 名称", interfaceName: interfaceName)

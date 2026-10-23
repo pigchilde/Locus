@@ -10,8 +10,13 @@ final class NetworkServiceTests: XCTestCase {
                 "PrimaryInterface": primary == "wired" ? "en9" : "en0",
                 "Router": "192.168.61.254"
             ],
-            "Setup:/Network/Service/wired/Interface": ["Type": "Ethernet", "DeviceName": "en9"],
-            "Setup:/Network/Service/wifi/Interface": ["Type": "IEEE80211", "DeviceName": "en0"],
+            "Setup:/Network/Service/wired/Interface": [
+                "Type": "Ethernet", "Hardware": "Ethernet", "DeviceName": "en9"
+            ],
+            // macOS's dynamic store describes Wi-Fi as Ethernet with AirPort hardware.
+            "Setup:/Network/Service/wifi/Interface": [
+                "Type": "Ethernet", "Hardware": "AirPort", "DeviceName": "en0"
+            ],
             "State:/Network/Service/wired/\(family)": [
                 "NetworkSignature": "router-signature",
                 "Router": "192.168.61.254",
@@ -47,6 +52,44 @@ final class NetworkServiceTests: XCTestCase {
         let connection = try XCTUnwrap(NetworkService.connection(read: { data[$0] }, ssid: { _ in nil }))
         XCTAssertEqual(connection.kind, .wifi)
         XCTAssertNil(connection.identifier)
+    }
+
+    func testIEEE80211TypeStillIdentifiesWiFiWithoutHardwareField() {
+        var data = fixture(primary: "wifi")
+        data["Setup:/Network/Service/wifi/Interface"] = ["Type": "IEEE80211", "DeviceName": "en0"]
+        XCTAssertEqual(NetworkService.connection(read: { data[$0] }, ssid: { _ in "Studio" })?.kind, .wifi)
+    }
+
+    func testIPv6OnlyAirPortPrimaryIsRecognizedAsWiFi() {
+        let data = fixture(primary: "wifi", family: "IPv6")
+        let connection = NetworkService.connection(read: { data[$0] }, ssid: { _ in "Studio" })
+        XCTAssertEqual(connection?.kind, .wifi)
+        XCTAssertEqual(connection?.identifier, "Studio")
+    }
+
+    func testWiFiHardwareIsRecognizedOnNonDefaultInterfaceWithCustomServiceName() {
+        var data = fixture(primary: "wifi")
+        data["State:/Network/Global/IPv4"]?["PrimaryInterface"] = "en7"
+        data["Setup:/Network/Service/wifi/Interface"] = [
+            "Type": "Ethernet", "Hardware": "AirPort", "DeviceName": "en7",
+            "UserDefinedName": "Custom Network"
+        ]
+        let connection = NetworkService.connection(read: { data[$0] }, ssid: {
+            XCTAssertEqual($0, "en7")
+            return "Studio"
+        })
+        XCTAssertEqual(connection?.kind, .wifi)
+        XCTAssertEqual(connection?.identifier, "Studio")
+    }
+
+    func testWiredServiceNamedWiFiDoesNotChangeItsHardwareType() {
+        var data = fixture()
+        data["Setup:/Network/Service/wired/Interface"]?["UserDefinedName"] = "Wi-Fi"
+        let connection = NetworkService.connection(read: { data[$0] }, ssid: { _ in
+            XCTFail("A service display name must not classify wired hardware as Wi-Fi")
+            return nil
+        })
+        XCTAssertEqual(connection?.kind, .ethernet)
     }
 
     func testUnpluggingWiredAndFallingBackToWiFiChangesIdentity() {
